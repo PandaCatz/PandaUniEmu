@@ -41,8 +41,11 @@ frontend, or playable emulation.
 - Fresh adversarial review found two P2 defense-in-depth gaps: Ubuntu-only
   generator automation and publisher path patterns broader than the reviewed
   snapshot. Adding the Windows evidence leg and fully enumerating the publisher
-  fixed both. Re-review found no remaining P0-P2 issues, and the deletion-safe
-  53-file preview passed without a GitHub write.
+  fixed both. Re-review found no remaining P0-P2 issues. Initial checkpoint
+  `1fedfd85944c4ca58261cff4f823ace04686533d` then exposed CRLF conversion of
+  the generated module only on the Windows checkout. Root `.gitattributes`
+  now enforces canonical LF text across platforms; focused re-review found no
+  P0-P2 issue, and the deletion-safe 54-file preview passed.
 - Adopted `GPL-2.0-or-later` for project-owned code and documentation, added the
   canonical GPLv2 text at the repository root, declared the SPDX expression in
   every Rust package, and documented that `NOTICE` material and operator ROMs
@@ -202,6 +205,16 @@ Trainer-backed NROM and license checkpoint
 `29267749389` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu 24.04,
 including format, warnings-denied lint, debug/release tests, the release app,
 and 10,000 executions of each parser fuzz target.
+
+Automated clean-room evidence checkpoint
+`1fedfd85944c4ca58261cff4f823ace04686533d` added the bounded generator and
+six-job matrix, but GitHub Actions run `29269716230` correctly failed the new
+Windows evidence leg because checkout had converted the generated LF module to
+CRLF. The other five jobs passed. Cross-platform LF fix
+`f6cf9bc38f895ae839495c76f3adb01963966a6b` is published; GitHub Actions run
+`29270030204` passed all six jobs: stable tests, the release app, both
+10,000-run parser fuzz targets, and clean-room regeneration on Windows 2025 and
+Ubuntu 24.04.
 
 ## Key decisions
 

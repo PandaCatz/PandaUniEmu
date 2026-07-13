@@ -109,6 +109,9 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   `53c65b20e9d572bfe64bdaf0613481dba87d21a3`.
 - Published the trainer-backed NROM and `GPL-2.0-or-later` checkpoint as commit
   `93c696b005f4cddcaca932ba210e95aebeaba44a`.
+- Published the automated clean-room evidence checkpoint as commit
+  `1fedfd85944c4ca58261cff4f823ace04686533d` and its cross-platform LF fix as
+  commit `f6cf9bc38f895ae839495c76f3adb01963966a6b`.
 
 ## Required commands
 
@@ -215,8 +218,13 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Fresh review found two P2 defense-in-depth gaps: the evidence job was
   Ubuntu-only and publisher path patterns were broader than the reviewed
   snapshot. The Windows evidence leg and fully enumerated publisher inventory
-  fixed both; re-review found no remaining P0-P2 issues. The deletion-safe
-  53-file publisher preview passed and made no GitHub writes.
+  fixed both; re-review found no remaining P0-P2 issues. The first published
+  six-job run then exposed Windows checkout CRLF conversion of the generated
+  LF module. Root `.gitattributes` now enforces LF text on every platform; a
+  focused re-review found no P0-P2 issue. The deletion-safe 54-file preview
+  passed. Commit `f6cf9bc38f895ae839495c76f3adb01963966a6b` is published,
+  and GitHub Actions run `29270030204` passed all six Windows/Ubuntu
+  test, 10,000-run fuzz, and clean-room evidence jobs.
 - An operator-owned mapper-1 image was identified and retained only under the
   ignored `external-fixtures/` directory. Its header is valid, but the current
   NROM-only trace boundary correctly rejected it before emulation. MMC1 remains
