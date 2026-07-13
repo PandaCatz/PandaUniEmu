@@ -1,8 +1,9 @@
 # Build Path
 
 This is the execution order for turning the plan into code. The shared contract,
-iNES parser, NES cartridge boundary, testkit, and CLI now exist. The CPU and
-frontend portions below remain a path, not a claim of implementation.
+iNES parser, NES cartridge boundary, testkit, CLI, parser fuzz target, and
+trace-first CPU layer now exist. Independent CPU-oracle verification, the NES
+runtime bus/devices, and the frontend remain work, not claims of implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -148,10 +149,15 @@ result, and date. Performance gates use release builds and measured budgets.
 
 ## 9. First implementation issue list
 
-1. Approve core contract and NTSC-only milestone-one scope.
-2. Resolve and pin compatible Rust/frontend dependency versions.
-3. Scaffold the seven initial crates and CI.
-4. Implement `format-ines` with hostile-input tests.
-5. Implement the synthetic core and headless determinism test.
-6. Implement the 2A03 CPU trace runner and match `nestest`.
-7. Add mapper 0 and the first PPU timing oracle.
+1. Completed: freeze the first milestone to NTSC and approve the core contract.
+2. Completed: scaffold the headless crates, parser, CLI, CI, and fuzz smoke gate.
+3. Completed: implement generated hostile-input parser tests and a trace-first
+   documented-opcode CPU layer.
+4. Design the active bus/mapper interface, connect mapper 0, and implement a
+   defensive reference-log parser plus trace runner.
+5. Match against an operator-supplied `nestest` oracle and close every declared
+   semantic/cycle divergence.
+6. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,
+   and a dot-timed PPU oracle.
+7. Reach the headless NROM video/audio gate, then resolve and spike
+   `winit`/`wgpu`/`cpal` for the minimal frontend.

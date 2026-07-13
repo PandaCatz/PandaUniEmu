@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/core-nes",
+    "crates/cpu-6502",
     "crates/format-ines",
     "crates/retro-cli",
     "crates/retro-core",
@@ -22,4 +23,3 @@ all = "warn"
 [profile.release]
 codegen-units = 1
 lto = "thin"
-

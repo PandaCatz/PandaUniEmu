@@ -8,7 +8,9 @@ param(
 
     [string] $Branch = 'main',
 
-    [switch] $WhatIf
+    [switch] $WhatIf,
+
+    [switch] $DeleteMissingManagedFiles
 )
 
 Set-StrictMode -Version Latest
@@ -21,8 +23,12 @@ $exactFiles = @(
     'CLAUDE.md',
     'Cargo.lock',
     'Cargo.toml',
+    'COPYING',
+    'LICENSE',
+    'NOTICE',
     'README.md',
     'ROADMAP.md',
+    'SECURITY.md',
     'rust-toolchain.toml'
 )
 
@@ -36,6 +42,7 @@ function Test-PublishablePath {
         $Path -match '^crates/[^/]+/Cargo\.toml$' -or
         $Path -match '^crates/[^/]+/src/.+\.rs$' -or
         $Path -match '^docs/(?:.+/)?[^/]+\.md$' -or
+        $Path -match '^fuzz/(?:Cargo\.(?:toml|lock)|\.gitignore|fuzz_targets/.+\.rs)$' -or
         $Path -match '^tools/[^/]+\.ps1$'
 }
 
@@ -52,11 +59,6 @@ if ($files.Count -eq 0) {
 
 Write-Host "Snapshot contains $($files.Count) allowlisted files:"
 $files.Path | ForEach-Object { Write-Host "  $_" }
-
-if ($WhatIf) {
-    Write-Host 'WhatIf: no GitHub API calls were made.'
-    exit 0
-}
 
 $gh = Get-Command gh -ErrorAction Stop
 
@@ -110,23 +112,73 @@ if ($repositoryInfo.full_name -ne $Repository) {
 }
 
 $reference = Invoke-GhApi -Endpoint "repos/$Repository/git/ref/heads/$Branch" -Method GET -AllowFailure
-if ($null -eq $reference) {
-    $readme = $files | Where-Object Path -eq 'README.md' | Select-Object -First 1
-    if ($null -eq $readme) {
-        throw 'README.md is required to initialize an empty repository safely.'
+$createBranch = $null -eq $reference
+$parentSha = $null
+$baseTreeSha = $null
+$remoteEntries = @()
+
+if ($createBranch) {
+    $defaultBranch = [string] $repositoryInfo.default_branch
+    $reference = Invoke-GhApi `
+        -Endpoint "repos/$Repository/git/ref/heads/$defaultBranch" `
+        -Method GET `
+        -AllowFailure
+    if ($null -eq $reference) {
+        Write-Host "Repository is empty; the complete snapshot will atomically create branch '$Branch'."
     }
-    $readmeBytes = [System.Text.Encoding]::UTF8.GetBytes(
-        [System.IO.File]::ReadAllText($readme.FullName)
-    )
-    $null = Invoke-GhApi -Endpoint "repos/$Repository/contents/README.md" -Method PUT -Body @{
-        message = 'chore: initialize repository'
-        content = [System.Convert]::ToBase64String($readmeBytes)
+    else {
+        Write-Host "Branch '$Branch' is missing; it will be created from '$defaultBranch' plus this snapshot."
     }
 }
-$reference = Invoke-GhApi -Endpoint "repos/$Repository/git/ref/heads/$Branch" -Method GET
-$parentSha = [string] $reference.object.sha
 
-$treeEntries = foreach ($file in $files) {
+if ($null -ne $reference) {
+    $parentSha = [string] $reference.object.sha
+    $parentCommit = Invoke-GhApi -Endpoint "repos/$Repository/git/commits/$parentSha" -Method GET
+    $baseTreeSha = [string] $parentCommit.tree.sha
+    $remoteTree = Invoke-GhApi -Endpoint "repos/$Repository/git/trees/$baseTreeSha`?recursive=1" -Method GET
+    if ($remoteTree.truncated) {
+        throw 'The remote tree listing was truncated; refusing to publish an incomplete diff.'
+    }
+    $remoteEntries = @($remoteTree.tree)
+}
+
+$localPaths = @($files.Path)
+$missingRemotePaths = @(
+    $remoteEntries |
+        Where-Object {
+            $_.type -eq 'blob' -and
+            (Test-PublishablePath -Path ([string] $_.path)) -and
+            $localPaths -notcontains ([string] $_.path)
+        } |
+        ForEach-Object { [string] $_.path } |
+        Sort-Object -Unique
+)
+$deletedPaths = @()
+if ($DeleteMissingManagedFiles) {
+    $deletedPaths = @($missingRemotePaths)
+}
+
+if ($deletedPaths.Count -gt 0) {
+    Write-Host 'Explicitly scheduled managed-file deletions:'
+    $deletedPaths | ForEach-Object { Write-Host "  $_" }
+}
+elseif ($missingRemotePaths.Count -gt 0) {
+    Write-Host 'Managed remote files absent locally and preserved by default:'
+    $missingRemotePaths | ForEach-Object { Write-Host "  $_" }
+    Write-Host 'Use -DeleteMissingManagedFiles only after reviewing this list.'
+}
+else {
+    Write-Host 'No managed remote files are absent locally.'
+}
+
+if ($WhatIf) {
+    Write-Host 'WhatIf: the parent tree and all non-allowlisted remote files will be preserved.'
+    Write-Host 'WhatIf: no GitHub write calls were made.'
+    exit 0
+}
+
+$treeEntries = @(
+    foreach ($file in $files) {
     $content = [System.IO.File]::ReadAllText($file.FullName)
     $contentBytes = [System.Text.Encoding]::UTF8.GetBytes($content)
     $blob = Invoke-GhApi -Endpoint "repos/$Repository/git/blobs" -Method POST -Body @{
@@ -139,11 +191,24 @@ $treeEntries = foreach ($file in $files) {
         type = 'blob'
         sha = [string] $blob.sha
     }
-}
+    }
+    foreach ($path in $deletedPaths) {
+        @{
+            path = $path
+            mode = '100644'
+            type = 'blob'
+            sha = $null
+        }
+    }
+)
 
-$tree = Invoke-GhApi -Endpoint "repos/$Repository/git/trees" -Method POST -Body @{
+$treeBody = @{
     tree = @($treeEntries)
 }
+if ($null -ne $baseTreeSha) {
+    $treeBody.base_tree = $baseTreeSha
+}
+$tree = Invoke-GhApi -Endpoint "repos/$Repository/git/trees" -Method POST -Body $treeBody
 
 $commitBody = @{
     message = $Message
@@ -154,7 +219,7 @@ if ($null -ne $parentSha) {
 }
 $commit = Invoke-GhApi -Endpoint "repos/$Repository/git/commits" -Method POST -Body $commitBody
 
-if ($null -eq $parentSha) {
+if ($createBranch) {
     $null = Invoke-GhApi -Endpoint "repos/$Repository/git/refs" -Method POST -Body @{
         ref = "refs/heads/$Branch"
         sha = [string] $commit.sha

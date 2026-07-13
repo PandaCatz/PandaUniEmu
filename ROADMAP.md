@@ -1,8 +1,9 @@
 # Roadmap
 
-Current progress: Phase 1 is in progress. The headless contracts, parser,
-synthetic core, capture path, and CLI are implemented; the host frontend remains
-open. See `CLAUDE.md` for verified results and next tasks.
+Current progress: the Phase 1 headless contracts, parser, synthetic core,
+capture path, CLI, and verification gates are implemented. Work has begun on
+the Phase 2 NES CPU layer. The host frontend intentionally follows the verified
+headless NES path. See `CLAUDE.md` for evidence and exact next tasks.
 
 Estimates below are ranges for one experienced developer working close to full
 time. Part-time work, learning the hardware while implementing it, broad game
@@ -37,13 +38,12 @@ Deliverables:
 - Cargo workspace, core contracts, typed video/audio/input metadata, and a
   deterministic headless runner.
 - Standalone iNES/NES 2.0 parser crate with checked arithmetic and size limits.
-- Minimal `winit`/`wgpu` presenter and `cpal` audio adapter kept downstream of
-  the emulation core.
 - Structured diagnostics: emulated time, frame events, audio samples produced,
   buffer fill, underruns, and deterministic seed/configuration.
 
-Exit gate: a synthetic test core runs identically headless and in the frontend;
-captured video hashes and audio samples match.
+Exit gate: a synthetic test core runs deterministically through the shared
+contract and real headless executable; split/single runs and captured event,
+video, and audio hashes match. The minimal host frontend is Phase 3 work.
 
 ## Phase 2 — NES vertical slice (3–6 months)
 
@@ -52,18 +52,22 @@ Order:
 1. Ricoh 2A03 CPU core: official instructions, interrupts, DMA stalls, and bus
    behavior. Add required unofficial opcode encodings based on compatibility
    evidence, not an unsupported count.
-2. Cartridge model and mapper 0, then mappers 2, 1, 3, 7, and 4 as tests justify.
-   The interface must support mapper reset, IRQs, PPU address/A12 observation,
-   nametable routing, mutable reads, and persistent RAM before MMC3 work begins.
+2. Cartridge model and mapper 0 for the first playable NROM gate. After that
+   gate, add mappers 2, 1, 3, 7, and 4 as tests justify. The interface must
+   support mapper reset, IRQs, PPU address/A12 observation, nametable routing,
+   mutable reads, and persistent RAM before MMC3 work begins.
 3. Dot-timed NTSC PPU including scroll registers, sprite evaluation, VBlank/NMI
    races, and the odd-frame skipped PPU clock.
 4. APU including frame counter, DMC DMA interaction, nonlinear mixing, and a
    band-limited/resampled host output path.
 5. Input, battery-backed RAM, reset/power state, and deterministic replay.
 
-Exit gate: relevant CPU, PPU, APU, and mapper test suites pass; a curated,
-operator-owned compatibility set runs through representative scenes; headless
-goldens are stable on supported hosts; malformed cartridges return errors.
+First playable gate: documented CPU behavior passes an independent trace,
+mapper 0 executes, and one operator-owned NROM image reaches a measurable
+headless video/audio checkpoint. Phase exit gate: relevant CPU, PPU, APU, and
+supported-mapper suites pass; a curated operator-owned compatibility set runs
+through representative scenes; headless goldens are stable on supported hosts;
+malformed cartridges return errors.
 
 ## Phase 3 — frontend baseline (1–2 months)
 
