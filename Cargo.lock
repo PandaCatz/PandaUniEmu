@@ -6,6 +6,7 @@ version = 4
 name = "core-nes"
 version = "0.1.0"
 dependencies = [
+ "cpu-6502",
  "format-ines",
 ]
 
@@ -15,6 +16,10 @@ version = "0.1.0"
 
 [[package]]
 name = "format-ines"
+version = "0.1.0"
+
+[[package]]
+name = "format-nestest-log"
 version = "0.1.0"
 
 [[package]]
@@ -33,5 +38,9 @@ version = "0.1.0"
 name = "retro-testkit"
 version = "0.1.0"
 dependencies = [
+ "core-nes",
+ "cpu-6502",
+ "format-ines",
+ "format-nestest-log",
  "retro-core",
 ]

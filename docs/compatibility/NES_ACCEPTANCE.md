@@ -9,10 +9,10 @@ have passed unless the evidence column says so.
 | iNES/NES 2.0 parser | Generated valid/malformed tests, every truncation point, configured size limits, dirty-header rejection, and libFuzzer smoke/soak | Unit/adversarial tests pass; Windows AddressSanitizer smoke completed 10,000 runs through the checked-in launcher; Linux CI smoke pending |
 | Shared scheduler contract | Split and single runs match; reset repeats exact output; future input wins same-timestamp ordering; combined event hash is stable | Passed by synthetic-core tests |
 | Documented 2A03 opcodes | Independently checked opcode metadata plus exhaustive semantics/flags/addressing/cycle cases | The canonical set of 151 encodings decodes and selected generated semantic tests pass; independent metadata and instruction trace are absent |
-| Independent CPU trace | Operator-supplied `nestest` trace matches PC, A, X, Y, P, SP, and cumulative cycles through reference-log EOF under `NESTEST_PROCEDURE.md` | Procedure specified; bus/runner and reviewed external fixture absent |
+| Independent CPU trace | Operator-supplied `nestest` trace matches PC, A, X, Y, P, SP, and cumulative cycles through the final end-state row under `NESTEST_PROCEDURE.md` | Bounded parser, bus, and generated comparison pass; local CLI and reviewed external fixture absent |
 | IRQ/NMI/reset | Dedicated external suites plus focused generated tests cover stack bytes, vectors, B/U bits, masking, and edge timing | Generated instruction-level tests planned; external suite absent |
 | Unofficial opcodes | Explicit supported-encoding table and independent suite | Out of current milestone scope |
-| Mapper 0 execution | Parsed NROM-128/NROM-256 images map PRG/CHR correctly and run CPU traces without inline re-parsing | Cartridge ownership boundary passes; runtime bus absent |
+| Mapper 0 execution | Parsed NROM-128/NROM-256 images map PRG/CHR correctly and run CPU traces without inline re-parsing | CPU RAM/PRG mapping, trainer preload, ROM write behavior, reset vector, hostile memory-layout rejection, and generated trace pass; PPU-side CHR bus absent |
 | PPU/APU/gameplay | Headless timing/oracle suites and operator-owned compatibility matrix | Not started |
 
 ## CPU milestone boundary
@@ -39,11 +39,12 @@ but does not always place its directory on `PATH`. The launcher enforces the
 directory only for the child process, and fails with an installation instruction
 if the C++ AddressSanitizer component is missing. Other Windows architectures
 are not yet supported by this launcher.
-The launcher also creates original zero-filled valid/truncated seed images and
-sets a 64 KiB mutation limit, allowing a clean CI checkout to cover NROM-128,
-NROM-256, trainer, and NES 2.0 whole-image paths. On 2026-07-13 it completed
-10,000 runs locally with AddressSanitizer enabled. This bounded job is a smoke
-gate, not evidence of a long fuzz soak.
+The launcher also creates original zero-filled valid/truncated image seeds and a
+generated valid reference row, then sets a 64 KiB mutation limit. A clean CI
+checkout therefore exercises both `format_ines::parse` and
+`format_nestest_log::parse`. On 2026-07-13 both targets completed 10,000 runs
+locally with AddressSanitizer enabled. This bounded job is a smoke gate, not
+evidence of a long fuzz soak.
 
 CI uses bounded deterministic unit/adversarial tests. Longer fuzzing is a local
 or scheduled security gate because libFuzzer duration is intentionally open

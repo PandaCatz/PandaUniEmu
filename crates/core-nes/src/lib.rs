@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 
+mod nrom_bus;
+
+pub use nrom_bus::{CpuBusFault, NromCpuBus};
+
 use format_ines::{Cartridge, Mirroring, RamSizes, Region};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -7,6 +11,7 @@ use std::fmt::{Display, Formatter};
 const NROM_128_PRG: usize = 16 * 1024;
 const NROM_256_PRG: usize = 32 * 1024;
 const NROM_CHR: usize = 8 * 1024;
+const NROM_PRG_RAM: usize = 8 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NesCartridge {
@@ -31,8 +36,43 @@ impl NesCartridge {
         if !matches!(parsed.prg_rom().len(), NROM_128_PRG | NROM_256_PRG) {
             return Err(CartridgeError::InvalidNromPrgSize(parsed.prg_rom().len()));
         }
+        let ram = parsed.ram_sizes();
         if !matches!(parsed.chr_rom().len(), 0 | NROM_CHR) {
             return Err(CartridgeError::InvalidNromChrSize(parsed.chr_rom().len()));
+        }
+        let chr_memory =
+            ram.chr_ram
+                .checked_add(ram.chr_nvram)
+                .ok_or(CartridgeError::InvalidNromChrMemory {
+                    rom: parsed.chr_rom().len(),
+                    volatile: ram.chr_ram,
+                    nonvolatile: ram.chr_nvram,
+                })?;
+        if !matches!(
+            (parsed.chr_rom().len(), chr_memory),
+            (NROM_CHR, 0) | (0, NROM_CHR)
+        ) {
+            return Err(CartridgeError::InvalidNromChrMemory {
+                rom: parsed.chr_rom().len(),
+                volatile: ram.chr_ram,
+                nonvolatile: ram.chr_nvram,
+            });
+        }
+        let prg_memory =
+            ram.prg_ram
+                .checked_add(ram.prg_nvram)
+                .ok_or(CartridgeError::InvalidNromPrgMemory {
+                    volatile: ram.prg_ram,
+                    nonvolatile: ram.prg_nvram,
+                })?;
+        if !matches!(prg_memory, 0 | NROM_PRG_RAM) {
+            return Err(CartridgeError::InvalidNromPrgMemory {
+                volatile: ram.prg_ram,
+                nonvolatile: ram.prg_nvram,
+            });
+        }
+        if parsed.trainer().is_some() && prg_memory == 0 {
+            return Err(CartridgeError::TrainerWithoutPrgMemory);
         }
 
         Ok(Self {
@@ -40,7 +80,7 @@ impl NesCartridge {
             mirroring: parsed.mirroring(),
             region: parsed.region(),
             battery: parsed.has_battery(),
-            ram: parsed.ram_sizes(),
+            ram,
             trainer: parsed.trainer().map(<[u8]>::to_vec),
             prg_rom: parsed.prg_rom().to_vec(),
             chr_rom: parsed.chr_rom().to_vec(),
@@ -94,6 +134,16 @@ pub enum CartridgeError {
     UnsupportedSubmapper(u8),
     InvalidNromPrgSize(usize),
     InvalidNromChrSize(usize),
+    InvalidNromChrMemory {
+        rom: usize,
+        volatile: usize,
+        nonvolatile: usize,
+    },
+    InvalidNromPrgMemory {
+        volatile: usize,
+        nonvolatile: usize,
+    },
+    TrainerWithoutPrgMemory,
 }
 
 impl Display for CartridgeError {
@@ -116,6 +166,24 @@ impl Display for CartridgeError {
                 formatter,
                 "NROM CHR ROM must be absent or 8 KiB, got {size} bytes"
             ),
+            Self::InvalidNromChrMemory {
+                rom,
+                volatile,
+                nonvolatile,
+            } => write!(
+                formatter,
+                "NROM requires either 8 KiB CHR ROM or 8 KiB CHR memory, got {rom} ROM, {volatile} volatile, and {nonvolatile} nonvolatile bytes"
+            ),
+            Self::InvalidNromPrgMemory {
+                volatile,
+                nonvolatile,
+            } => write!(
+                formatter,
+                "NROM PRG memory must total 0 or 8 KiB, got {volatile} volatile and {nonvolatile} nonvolatile bytes"
+            ),
+            Self::TrainerWithoutPrgMemory => {
+                formatter.write_str("an NROM trainer requires an 8 KiB PRG memory window")
+            }
         }
     }
 }
@@ -153,5 +221,46 @@ mod tests {
             NesCartridge::from_parsed(parsed),
             Err(CartridgeError::UnsupportedMapper(1))
         );
+    }
+
+    #[test]
+    fn rejects_nes2_prg_memory_that_cannot_fit_the_nrom_cpu_window() {
+        let mut bytes = image(0);
+        bytes[7] = 0x08;
+        bytes[10] = 0x08;
+        let parsed = format_ines::parse(&bytes).expect("generated NES 2.0 image parses");
+
+        assert_eq!(
+            NesCartridge::from_parsed(parsed),
+            Err(CartridgeError::InvalidNromPrgMemory {
+                volatile: 16 * 1024,
+                nonvolatile: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn accepts_only_one_eight_kibibyte_chr_backing_store() {
+        fn nes2_image(chr_banks: u8, chr_memory_shift: u8) -> Vec<u8> {
+            let mut bytes = vec![0; 16 + NROM_128_PRG + usize::from(chr_banks) * NROM_CHR];
+            bytes[0..4].copy_from_slice(b"NES\x1a");
+            bytes[4] = 1;
+            bytes[5] = chr_banks;
+            bytes[7] = 0x08;
+            bytes[11] = chr_memory_shift;
+            bytes
+        }
+
+        let valid_ram = nes2_image(0, 7);
+        let parsed = format_ines::parse(&valid_ram).expect("generated CHR-RAM image parses");
+        assert!(NesCartridge::from_parsed(parsed).is_ok());
+
+        for bytes in [nes2_image(0, 0), nes2_image(0, 8), nes2_image(1, 7)] {
+            let parsed = format_ines::parse(&bytes).expect("generated NES 2.0 image parses");
+            assert!(matches!(
+                NesCartridge::from_parsed(parsed),
+                Err(CartridgeError::InvalidNromChrMemory { .. })
+            ));
+        }
     }
 }

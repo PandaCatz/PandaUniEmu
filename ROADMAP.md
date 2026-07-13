@@ -1,9 +1,11 @@
 # Roadmap
 
 Current progress: the Phase 1 headless contracts, parser, synthetic core,
-capture path, CLI, and verification gates are implemented. Work has begun on
-the Phase 2 NES CPU layer. The host frontend intentionally follows the verified
-headless NES path. See `CLAUDE.md` for evidence and exact next tasks.
+capture path, CLI, and verification gates are implemented. Phase 2 now has an
+instruction-oriented CPU, mapper-0 CPU bus, hostile reference-log parser, and
+generated trace runner; the independent external trace remains open. The host
+frontend intentionally follows the verified headless NES path. See `CLAUDE.md`
+for evidence and exact next tasks.
 
 Estimates below are ranges for one experienced developer working close to full
 time. Part-time work, learning the hardware while implementing it, broad game

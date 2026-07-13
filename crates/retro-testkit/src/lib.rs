@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod nes_trace;
+
 use retro_core::{
     AudioPacket, ChannelLayout, ClockRate, ControlId, Core, CoreError, CoreInfo, EmulatedTime,
     InputEvent, InputPortId, InputValue, OutputSink, Region, ResetKind, RunOutcome, RunStopReason,

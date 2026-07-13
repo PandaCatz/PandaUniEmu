@@ -3,7 +3,8 @@
 Status: the Phase 1 headless foundation is implemented and the NES vertical
 slice is in progress. Shared contracts, a defensive NES image parser, the
 parsed-cartridge boundary, synthetic test core, headless CLI, parser fuzzing,
-and a trace-first 2A03 CPU layer exist. The CPU has not yet passed an independent
+a trace-first 2A03 CPU layer, mapper-0 CPU bus, and generated reference-trace
+runner exist. The CPU has not yet passed an operator-supplied independent
 `nestest` oracle, and playable console emulation does not exist yet.
 
 This project targets a native Rust application with independently testable NES,

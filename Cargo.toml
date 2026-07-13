@@ -3,6 +3,7 @@ members = [
     "crates/core-nes",
     "crates/cpu-6502",
     "crates/format-ines",
+    "crates/format-nestest-log",
     "crates/retro-cli",
     "crates/retro-core",
     "crates/retro-testkit",

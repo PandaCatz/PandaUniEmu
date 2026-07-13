@@ -1,9 +1,10 @@
 # Build Path
 
 This is the execution order for turning the plan into code. The shared contract,
-iNES parser, NES cartridge boundary, testkit, CLI, parser fuzz target, and
-trace-first CPU layer now exist. Independent CPU-oracle verification, the NES
-runtime bus/devices, and the frontend remain work, not claims of implementation.
+iNES parser, NES cartridge boundary, testkit, CLI, parser fuzz targets,
+trace-first CPU layer, mapper-0 CPU bus, and generated trace runner now exist.
+Independent CPU-oracle verification, PPU/APU/runtime scheduling, and the
+frontend remain work, not claims of implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -29,6 +30,7 @@ universal-retro-emulator/
 │   ├── retro-cli/           # deterministic headless executable
 │   ├── retro-frontend/      # winit/wgpu/cpal/gilrs adapters
 │   ├── format-ines/         # bytes -> validated cartridge; no frontend deps
+│   ├── format-nestest-log/  # hostile reference bytes -> validated trace rows
 │   ├── cpu-6502/
 │   └── core-nes/
 ├── tests/
@@ -153,8 +155,8 @@ result, and date. Performance gates use release builds and measured budgets.
 2. Completed: scaffold the headless crates, parser, CLI, CI, and fuzz smoke gate.
 3. Completed: implement generated hostile-input parser tests and a trace-first
    documented-opcode CPU layer.
-4. Design the active bus/mapper interface, connect mapper 0, and implement a
-   defensive reference-log parser plus trace runner.
+4. Completed: connect a minimal mapper-0 CPU bus and implement a defensive,
+   independently fuzzed reference-log parser plus generated trace runner.
 5. Match against an operator-supplied `nestest` oracle and close every declared
    semantic/cycle divergence.
 6. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,

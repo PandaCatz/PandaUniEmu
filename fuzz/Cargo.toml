@@ -13,6 +13,9 @@ libfuzzer-sys = "0.4"
 [dependencies.format-ines]
 path = "../crates/format-ines"
 
+[dependencies.format-nestest-log]
+path = "../crates/format-nestest-log"
+
 # Use independent workspace for fuzzers
 [workspace]
 members = ["."]
@@ -20,6 +23,13 @@ members = ["."]
 [[bin]]
 name = "parse_ines"
 path = "fuzz_targets/parse_ines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_nestest_log"
+path = "fuzz_targets/parse_nestest_log.rs"
 test = false
 doc = false
 bench = false

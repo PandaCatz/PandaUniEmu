@@ -1,7 +1,7 @@
 # Nestest Comparison Procedure
 
-Status: specified but not executable yet. The project has neither an integrated
-NES CPU bus/trace runner nor reviewed local fixtures.
+Status: the bus, bounded log parser, and comparison runner are exercised with
+generated data. No reviewed operator-supplied ROM/reference pair has been run.
 
 ## Fixture boundary
 
@@ -22,10 +22,12 @@ until those details have been independently verified.
 4. Before each instruction, compare PC, A, X, Y, P, SP, and cumulative CPU
    cycles with the corresponding reference row. Opcode bytes are diagnostic
    context and must match bytes read through the mapped CPU bus.
-5. Execute exactly one instruction. Stop at the first mismatch and record the
-   row number, both states, opcode bytes, and the immediately preceding row.
-6. The declared endpoint is the end of the matching reference log. A pass is
-   zero mismatches and exactly one executed instruction per parsed row; early
+5. For every row except the final row, execute exactly one instruction. Stop at
+   the first mismatch and record the row number, both states, opcode bytes, and
+   the immediately preceding row.
+6. Treat the final row as the expected post-state sentinel for the preceding
+   transition; compare its state and opcode bytes but do not execute it. A pass
+   is zero mismatches and exactly `row_count - 1` verified transitions. Early
    termination, extra execution, unsupported opcodes, or cycle renormalization
    after row one is a failure.
 
@@ -33,11 +35,13 @@ Status comparison includes all stored processor bits. Any special treatment of
 the B/unused bits must be justified against the reviewed reference format and
 implemented in the log parser, not hidden in the CPU comparison.
 
-## Required implementation before running
+## Implementation and run prerequisites
 
-- A mapper-0 CPU bus with PRG mirroring and RAM mirroring.
-- A trace-log parser that rejects malformed rows without panicking.
-- A runner that can initialize the declared architectural state without
-  introducing unrecorded reset cycles.
-- A sanitized run-record writer that stores hashes and the first divergence,
-  never fixture bytes or operator paths.
+- Implemented: mapper-0 CPU bus with PRG and internal-RAM mirroring.
+- Implemented: isolated bounded trace-log parser with malformed-input tests and
+  a dedicated fuzz target.
+- Implemented: runner initialization from the first row without unrecorded
+  reset cycles, plus generated state/opcode/cycle/fault comparison tests.
+- Still required for an external run: reviewed fixture source/revision/license,
+  a local CLI, and a sanitized run record containing hashes and the first
+  divergence but never fixture bytes or operator paths.

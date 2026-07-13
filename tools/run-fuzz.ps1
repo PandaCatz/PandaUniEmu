@@ -114,6 +114,15 @@ Write-GeneratedInesSeed -Name 'generated-trainer.nes' -PrgBanks 1 -ChrBanks 0 -F
 Write-GeneratedInesSeed -Name 'generated-nes2.nes' -PrgBanks 1 -ChrBanks 1 -Flags7 0x08
 Write-GeneratedInesSeed -Name 'generated-truncated.nes' -PrgBanks 1 -ChrBanks 1 -TruncateLastByte
 
+$logCorpusDirectory = Join-Path $projectRoot 'fuzz/corpus/parse_nestest_log'
+$null = New-Item -ItemType Directory -Path $logCorpusDirectory -Force
+$generatedLog = 'C000 A9 01 LDA A:00 X:00 Y:00 P:24 SP:FD PPU: 0, 21 CYC:7'
+[IO.File]::WriteAllText(
+    (Join-Path $logCorpusDirectory 'generated-valid-row.log'),
+    $generatedLog,
+    [Text.Encoding]::ASCII
+)
+
 $fuzzerArguments = @("-runs=$Runs", '-max_len=65536')
 if ($MaxTotalTimeSeconds -gt 0) {
     $fuzzerArguments += "-max_total_time=$MaxTotalTimeSeconds"
@@ -124,6 +133,10 @@ try {
     & cargo $toolchainArgument fuzz run parse_ines --fuzz-dir fuzz -- @fuzzerArguments
     if ($LASTEXITCODE -ne 0) {
         throw "The parse_ines fuzz target failed with exit code $LASTEXITCODE."
+    }
+    & cargo $toolchainArgument fuzz run parse_nestest_log --fuzz-dir fuzz -- @fuzzerArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "The parse_nestest_log fuzz target failed with exit code $LASTEXITCODE."
     }
 }
 finally {

@@ -1,13 +1,9 @@
 [package]
-name = "core-nes"
+name = "format-nestest-log"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-
-[dependencies]
-cpu-6502 = { path = "../cpu-6502" }
-format-ines = { path = "../format-ines" }
 
 [lints]
 workspace = true

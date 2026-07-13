@@ -27,22 +27,25 @@ slice on top of the completed Phase 1 headless foundation.
 
 ## Current state
 
-The workspace contains six functional crates:
+The workspace contains seven functional crates:
 
 - `retro-core`: shared deterministic contracts and typed output/input metadata.
 - `format-ines`: defensive borrowed parser for iNES and NES 2.0 images.
-- `core-nes`: parsed-cartridge ownership boundary and mapper-0 image validation;
-  no active CPU bus or running machine yet.
-- `retro-testkit`: deterministic synthetic core, capture sink, and stable hashes.
+- `format-nestest-log`: bounded hostile-byte parser for reference CPU trace rows.
+- `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, and a
+  minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults.
+- `retro-testkit`: deterministic synthetic core, capture hashes, and generated
+  mapper-0 CPU reference-trace comparison.
 - `retro-cli`: real headless executable for the synthetic core.
 - `cpu-6502`: trace-first documented 2A03 instruction layer with explicit
   addressing, flags, cycle totals, stack/control flow, and decode metadata.
 
-The fuzz project calls `format_ines::parse` with arbitrary bytes. The checked-in
-launcher handles the Windows AddressSanitizer runtime path.
+The fuzz project calls both format parsers with arbitrary bytes. The checked-in
+launcher generates redistribution-safe seeds and handles the Windows
+AddressSanitizer runtime path.
 
-Not implemented: `retro-frontend`, an active NES bus/mapper machine,
-per-bus-cycle CPU sequencing, IRQ/NMI sampling, DMA, scheduler, PPU, APU, input
+Not implemented: `retro-frontend`, a complete NES machine, PPU/APU/I/O bus
+devices, per-bus-cycle CPU sequencing, IRQ/NMI sampling, DMA, scheduler, input
 hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 
 ## Completed work
@@ -58,6 +61,10 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 - Implemented decode entries for the canonical 151 documented opcode encodings
   and selected generated semantic tests in a trace-first CPU layer. The metadata
   and full behavior still need an independent `nestest` comparison.
+- Implemented an NROM-128/NROM-256 CPU bus, trainer/PRG-memory validation,
+  side-effect-free diagnostic reads, and explicit faults for missing devices.
+- Added an isolated bounded `nestest`-style log parser, generated end-to-end
+  trace comparison, and a second ASan fuzz target. No external fixture was used.
 - Published the verified foundation as commit
   `b7c3182a8672db0bed814951cd9d959fa8eb8f7a` and its handoff update as commit
   `4515511c154c1e5fe39a45c750bda45a71569ed3`.
@@ -89,9 +96,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 32 passed, 0 failed.
-- Release tests: 32 passed, 0 failed; doc tests passed.
-- Windows AddressSanitizer fuzz smoke: 10,000 executions completed with no crash.
+- Debug tests: 49 passed, 0 failed.
+- Release tests: 49 passed, 0 failed; doc tests passed.
+- Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
+  with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
   run used rustc nightly commit `be8e82435` dated 2026-07-11.
 - Release CLI: final tick `30`; video `3` frames, hash `2d1f1e3d37030229`;
@@ -100,12 +108,14 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - CPU/fuzz checkpoint `a01aac5e9c287770197ebb8b79f0095b87ebbabb`
   is published. GitHub Actions run `29252492924` passed all four jobs: stable
   tests on Windows/Linux and seeded ASan fuzz smoke on Windows/Linux.
+- The mapper-0 bus/reference-runner milestone is locally verified but not yet
+  published; do not attribute it to the preceding checkpoint.
 
 ## Next tasks, in order
 
-1. Implement the minimal mapper-0 CPU bus and a defensive reference-log parser
-   plus trace runner.
-2. Run an operator-supplied `nestest` ROM/log without committing either; fix
+1. Verify the exact upstream/revision/license for the intended `nestest` pair
+   and add a sanitized local CLI entry point that accepts operator paths.
+2. Run the operator-supplied ROM/log without committing either; fix
    every architectural-state or cycle divergence.
 3. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the
    missing interrupt sampling and per-cycle behavior.
@@ -123,6 +133,7 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 ## Honest limitations
 
 The synthetic core proves only the shared contract/headless capture path. The
-CPU currently proves generated instruction-level behavior only; it has no
-independent oracle result and is not bus-cycle accurate. `core-nes` proves only
-the parser-to-runtime ownership boundary. This is not a playable NES emulator.
+CPU and mapper-0 bus currently prove generated instruction-level behavior only;
+they have no independent oracle result and are not bus-cycle accurate. PPU/APU/
+I/O are intentionally faulted rather than simulated. This is not a playable NES
+emulator.

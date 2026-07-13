@@ -41,8 +41,13 @@ name = "format-ines-fuzz"
 version = "0.0.0"
 dependencies = [
  "format-ines",
+ "format-nestest-log",
  "libfuzzer-sys",
 ]
+
+[[package]]
+name = "format-nestest-log"
+version = "0.1.0"
 
 [[package]]
 name = "getrandom"
