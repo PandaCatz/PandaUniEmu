@@ -63,7 +63,7 @@ both 10,000-run parser fuzz jobs.
   encodings.
 - [x] Implement mapper-0 CPU addressing, PRG RAM, trainer preload, and
   clean-room NROM integration traces.
-- [x] Pass the identity-checked Kevin Horton `nestest` V1.00 architectural trace,
+- [x] Pass the identity-checked `nestest` V1.00 architectural trace,
   including its 76 stable undocumented encodings.
 - [ ] Add reset, IRQ, NMI, and per-cycle bus-access-order behavior and tests.
 - [ ] Add the NES master-clock scheduler and a dot-timed PPU oracle.
