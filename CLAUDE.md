@@ -176,6 +176,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   transitions with final `PC=C66E`, `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`,
   and 26,554 cumulative cycles. All 76 stable undocumented encodings exercised
   by the fixture passed.
+- Strict full-trace checkpoint `7f1e20f07a93c432fb0639ea8630474c4e9e26b7`
+  is published. GitHub Actions run `29273142006` passed all six Windows/Ubuntu
+  test, 10,000-run fuzz, and clean-room evidence jobs. No ignored fixture or
+  local run record was published.
 - Mapper-0 bus/reference-runner checkpoint
   `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
   `29254844214` passed all four jobs: stable tests and both 10,000-run parser

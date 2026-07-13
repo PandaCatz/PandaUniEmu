@@ -160,6 +160,10 @@ nightly-2026-07-12 on 2026-07-13:
   transitions of the exact reviewed QMT pair, including all 76 stable
   undocumented encodings used by the fixture. It ended at `PC=C66E`, `A=00`,
   `X=FF`, `Y=15`, `P=27`, `SP=FD`, and 26,554 cumulative cycles.
+- Strict full-trace checkpoint `7f1e20f07a93c432fb0639ea8630474c4e9e26b7`
+  is published. GitHub Actions run `29273142006` passed all six Windows/Ubuntu
+  test, 10,000-run fuzz, and clean-room evidence jobs. No ignored fixture or
+  local run record was published.
 - The release CLI help path and generated operator-file path were exercised; the
   latter is also covered by unit tests because no external fixture is present.
 - The release binary matched a three-row generated trace and returned status `1`
