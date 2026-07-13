@@ -53,6 +53,7 @@ namespace PandaUniEmu {
 
 $exactFiles = @(
     '.github/workflows/ci.yml',
+    '.gitattributes',
     '.gitignore',
     'BUILD_PATH.md',
     'CLAUDE.md',
