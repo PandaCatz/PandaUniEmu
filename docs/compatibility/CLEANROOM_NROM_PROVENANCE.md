@@ -13,16 +13,16 @@ the repository. The generated Rust module reconstructs each image in memory.
 - Revision: `3138e1b337734a9b2ac1ea90ee7a453514436221`
 - License: BSD-3-Clause; retained in `NOTICE`
 - `LICENSE.txt` SHA-256:
-  `aff1cd260d7d6367ccc9ecb28e6823d54ec7cfd254c27e43ae76c2747a7dc6a1`
+  `82242fe6c832b58a917269754bc6c0f1ec02993802e78dc897fe9b365605a08b`
 
 | Validated file | SHA-256 |
 |---|---|
-| `py65/__init__.py` | `9c3218570ae3ad9bc4ca97809f9f24f490ac94b4d2557970b8ebb57dbbb87c7e` |
-| `py65/devices/__init__.py` | `9c3218570ae3ad9bc4ca97809f9f24f490ac94b4d2557970b8ebb57dbbb87c7e` |
-| `py65/devices/mpu6502.py` | `bdae2b7ef3e2a38519a007412280107f330c6fc6433738364578fe8338e57e7e` |
-| `py65/utils/__init__.py` | `9c3218570ae3ad9bc4ca97809f9f24f490ac94b4d2557970b8ebb57dbbb87c7e` |
-| `py65/utils/conversions.py` | `8c1a947f24351ced8265dae7e94eb8b13b24f489a4f62f15040af1a597997d44` |
-| `py65/utils/devices.py` | `1ab16cbe2c6ae2213452d9ff577dec3856df209e70361e1f1598ffb7cbbf0a1c` |
+| `py65/__init__.py` | `4f6a41c619e2f0d6fc48eaf9fbc9ca31729365888c26df8c7750cf4c571ee8fc` |
+| `py65/devices/__init__.py` | `4f6a41c619e2f0d6fc48eaf9fbc9ca31729365888c26df8c7750cf4c571ee8fc` |
+| `py65/devices/mpu6502.py` | `15d93835b4f279b702270d9a0b417938291347ec57cc12d9e0307cd344d381fe` |
+| `py65/utils/__init__.py` | `4f6a41c619e2f0d6fc48eaf9fbc9ca31729365888c26df8c7750cf4c571ee8fc` |
+| `py65/utils/conversions.py` | `448b8aa2cc59aa71a6a644a5dd93051ab4b2def2ae720c4991c0e54f31a4eaa9` |
+| `py65/utils/devices.py` | `fca3864bebcf1db7dbc13014487ad7091499d85c8cb14ca7288c5fdc63de6a0e` |
 
 The generator reads and validates the license, CPU module, every executed
 package initializer, and the two imported py65 utility modules against pinned
@@ -30,11 +30,28 @@ hashes before executing code. It creates fresh in-memory modules and directly
 compiles only those validated source bytes; importlib, filesystem module search,
 and bytecode caches are not in the execution path. It then rejects any extra
 py65 module. Cached bytecode and reparse points therefore cannot change the
-executed oracle. Missing, oversized, or changed inputs fail before output.
+executed oracle. Missing, oversized, or changed inputs fail before output. The
+hashes identify the raw LF bytes served for the exact commit, avoiding checkout
+line-ending conversion.
 
 ## Reproduction and identities
 
-With the pinned py65 checkout available outside this repository:
+The normal bounded verification command downloads only the seven files listed
+above, caps each response at 1,000,000 bytes, and runs the hostile regressions
+plus production check mode:
+
+```powershell
+python tools/check-cleanroom-nrom.py
+```
+
+CI runs this command on Windows 2025 and Ubuntu 24.04 with Python 3.13.5 from
+immutable `actions/setup-python` v6.3.0 commit
+`ece7cb06caefa5fff74198d8649806c4678c61a1`. Checkouts do not retain credentials,
+and workflow permissions are read-only.
+
+For an intentional regeneration with an already available pinned py65 tree
+outside this repository, use the low-level write command and then run the
+bounded verification command again:
 
 ```powershell
 python tools/generate-cleanroom-nrom.py `
@@ -43,9 +60,11 @@ python tools/generate-cleanroom-nrom.py `
 ```
 
 The checked-in generated module SHA-256 is
-`c54fb4ce577aa3331386bd6eb91260869493a5c4fbc89fc409f827497d2c9054`.
-Two clean regenerations on 2026-07-13 were byte-identical. A mutated imported
-py65 module was rejected before output.
+`02f88830b4af0d46b3ba542a713c4fddd94f6c9af4f9b49e69d92bc03a3bfab5`.
+Two raw-source regenerations must be byte-identical to each other and the
+checked-in module. Tests require exact-limit acceptance and reject limit-plus-one,
+missing, same-length mutated, stale, trailing, and missing-output inputs without
+repairing the target.
 
 | Case | Image SHA-256 | Trace SHA-256 | Rows / transitions | Final state |
 |---|---|---|---|---|
@@ -62,7 +81,9 @@ bus, trace runner, and CLI boundary. The trainer is project-owned deterministic
 data with byte `i = (37 * i + A7) mod 256`; it yields `$7000=A7` and
 `$71FF=82`. Both values affect independently checked trace rows, so correct
 header offset and preload are required. Starting CPU state is
-explicit; reset is not invoked. Decimal mode stays clear.
+explicit; reset is not invoked. Decimal mode stays clear. A Rust integration
+test spawns the compiled `retro-cli` executable for all three cases and requires
+the exact complete summary, zero exit status, and empty standard error.
 
 This evidence is architectural and intentionally narrow: `bus_order=unchecked`,
 `reset=unchecked`, `interrupts=unchecked`, and `nestest=unrun`. It does not

@@ -9,20 +9,21 @@ import types
 from pathlib import Path
 
 PY65_COMMIT = "3138e1b337734a9b2ac1ea90ee7a453514436221"
-PY65_CPU_SHA256 = "bdae2b7ef3e2a38519a007412280107f330c6fc6433738364578fe8338e57e7e"
-PY65_LICENSE_SHA256 = "aff1cd260d7d6367ccc9ecb28e6823d54ec7cfd254c27e43ae76c2747a7dc6a1"
+PY65_CPU_SHA256 = "15d93835b4f279b702270d9a0b417938291347ec57cc12d9e0307cd344d381fe"
+PY65_LICENSE_SHA256 = "82242fe6c832b58a917269754bc6c0f1ec02993802e78dc897fe9b365605a08b"
 PY65_IMPORT_HASHES = {
-    "py65/__init__.py": "9c3218570ae3ad9bc4ca97809f9f24f490ac94b4d2557970b8ebb57dbbb87c7e",
-    "py65/devices/__init__.py": "9c3218570ae3ad9bc4ca97809f9f24f490ac94b4d2557970b8ebb57dbbb87c7e",
+    "py65/__init__.py": "4f6a41c619e2f0d6fc48eaf9fbc9ca31729365888c26df8c7750cf4c571ee8fc",
+    "py65/devices/__init__.py": "4f6a41c619e2f0d6fc48eaf9fbc9ca31729365888c26df8c7750cf4c571ee8fc",
     "py65/devices/mpu6502.py": PY65_CPU_SHA256,
-    "py65/utils/__init__.py": "9c3218570ae3ad9bc4ca97809f9f24f490ac94b4d2557970b8ebb57dbbb87c7e",
-    "py65/utils/conversions.py": "8c1a947f24351ced8265dae7e94eb8b13b24f489a4f62f15040af1a597997d44",
-    "py65/utils/devices.py": "1ab16cbe2c6ae2213452d9ff577dec3856df209e70361e1f1598ffb7cbbf0a1c",
+    "py65/utils/__init__.py": "4f6a41c619e2f0d6fc48eaf9fbc9ca31729365888c26df8c7750cf4c571ee8fc",
+    "py65/utils/conversions.py": "448b8aa2cc59aa71a6a644a5dd93051ab4b2def2ae720c4991c0e54f31a4eaa9",
+    "py65/utils/devices.py": "fca3864bebcf1db7dbc13014487ad7091499d85c8cb14ca7288c5fdc63de6a0e",
 }
 START = 0xC000
 SENTINEL = 0xC102
 MAX_STEPS = 64
 TRAINER_LEN = 512
+MAX_PINNED_FILE_BYTES = 1_000_000
 
 
 def trainer_byte(index: int) -> int:
@@ -234,16 +235,35 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def read_bounded_file(path: Path, maximum: int, description: str) -> bytes:
+    try:
+        with path.open("rb") as handle:
+            data = handle.read(maximum + 1)
+    except OSError as error:
+        raise RuntimeError(f"{description} is missing or unreadable: {path}") from error
+    if len(data) > maximum:
+        raise RuntimeError(f"{description} is oversized: {path}")
+    return data
+
+
+def require_exact_file(path: Path, expected: bytes) -> None:
+    try:
+        with path.open("rb") as handle:
+            current = handle.read(len(expected) + 1)
+    except OSError as error:
+        raise RuntimeError(
+            f"generated clean-room output is missing or unreadable: {path}"
+        ) from error
+    if current != expected:
+        raise RuntimeError(f"generated clean-room output is stale: {path}")
+
+
 def require_pinned_py65(root: Path):
     required_hashes = {"LICENSE.txt": PY65_LICENSE_SHA256, **PY65_IMPORT_HASHES}
     validated_files: dict[str, bytes] = {}
     for relative_path, expected in required_hashes.items():
         path = root / relative_path
-        if not path.is_file():
-            raise RuntimeError(f"missing or oversized pinned py65 file: {path}")
-        source = path.read_bytes()
-        if len(source) > 1_000_000:
-            raise RuntimeError(f"missing or oversized pinned py65 file: {path}")
+        source = read_bounded_file(path, MAX_PINNED_FILE_BYTES, "pinned py65 file")
         actual = sha256(source)
         if actual != expected:
             raise RuntimeError(f"pinned py65 hash mismatch: {path}")
@@ -438,43 +458,58 @@ pub const CASES: &[CleanroomCase] = &[
 '''
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--py65-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="verify that --output is byte-identical without modifying it",
+    )
     args = parser.parse_args()
 
-    mpu_type = require_pinned_py65(args.py65_root.resolve())
-    cases = []
-    case_specs = (
-        ("nrom128", 1, False, 0xD8, 0x00, 0x00),
-        ("nrom256", 2, False, 0x5A, 0x00, 0x00),
-        ("nrom128_trainer", 1, True, 0xD8, TRAINER[0], TRAINER[-1]),
-    )
-    for name, prg_banks, trainer, marker, trainer_start, trainer_end in case_specs:
-        image = build_image(prg_banks, trainer)
-        trace, rows, final_cycles = generate_trace(
-            mpu_type, image, marker, trainer_start, trainer_end
+    try:
+        mpu_type = require_pinned_py65(args.py65_root.resolve())
+        cases = []
+        case_specs = (
+            ("nrom128", 1, False, 0xD8, 0x00, 0x00),
+            ("nrom256", 2, False, 0x5A, 0x00, 0x00),
+            ("nrom128_trainer", 1, True, 0xD8, TRAINER[0], TRAINER[-1]),
         )
-        cases.append(
-            {
-                "name": name,
-                "prg_banks": prg_banks,
-                "trainer": trainer,
-                "image_sha256": sha256(image),
-                "trace_sha256": sha256(trace.encode("ascii")),
-                "rows": rows,
-                "final_cycles": final_cycles,
-                "trace": trace,
-            }
-        )
+        for name, prg_banks, trainer, marker, trainer_start, trainer_end in case_specs:
+            image = build_image(prg_banks, trainer)
+            trace, rows, final_cycles = generate_trace(
+                mpu_type, image, marker, trainer_start, trainer_end
+            )
+            cases.append(
+                {
+                    "name": name,
+                    "prg_banks": prg_banks,
+                    "trainer": trainer,
+                    "image_sha256": sha256(image),
+                    "trace_sha256": sha256(trace.encode("ascii")),
+                    "rows": rows,
+                    "final_cycles": final_cycles,
+                    "trace": trace,
+                }
+            )
 
-    output = render_rust(cases)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(output, encoding="utf-8", newline="\n")
-    print(f"wrote {len(cases)} clean-room cases to {args.output}")
-    print(f"generated_sha256={sha256(output.encode('utf-8'))}")
+        output = render_rust(cases)
+        output_bytes = output.encode("utf-8")
+        if args.check:
+            require_exact_file(args.output, output_bytes)
+            print(f"verified {len(cases)} clean-room cases in {args.output}")
+        else:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_bytes(output_bytes)
+            print(f"wrote {len(cases)} clean-room cases to {args.output}")
+        print(f"generated_sha256={sha256(output_bytes)}")
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"clean-room generation failed: {error}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

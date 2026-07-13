@@ -1,5 +1,7 @@
 /target/
 /external-fixtures/
+__pycache__/
+*.py[cod]
 
 # Operator-owned game and firmware data must never be committed.
 *.nes

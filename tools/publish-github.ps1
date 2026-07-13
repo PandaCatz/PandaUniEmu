@@ -52,12 +52,34 @@ namespace PandaUniEmu {
 }
 
 $exactFiles = @(
+    '.github/workflows/ci.yml',
     '.gitignore',
     'BUILD_PATH.md',
     'CLAUDE.md',
     'Cargo.lock',
     'Cargo.toml',
     'COPYING',
+    'crates/core-nes/Cargo.toml',
+    'crates/core-nes/src/lib.rs',
+    'crates/core-nes/src/nrom_bus.rs',
+    'crates/cpu-6502/Cargo.toml',
+    'crates/cpu-6502/src/lib.rs',
+    'crates/cpu-6502/src/singlestep_vectors.rs',
+    'crates/format-ines/Cargo.toml',
+    'crates/format-ines/src/lib.rs',
+    'crates/format-nestest-log/Cargo.toml',
+    'crates/format-nestest-log/src/lib.rs',
+    'crates/retro-cli/Cargo.toml',
+    'crates/retro-cli/src/lib.rs',
+    'crates/retro-cli/src/main.rs',
+    'crates/retro-cli/src/nestest_identity.rs',
+    'crates/retro-cli/tests/cleanroom_process.rs',
+    'crates/retro-core/Cargo.toml',
+    'crates/retro-core/src/lib.rs',
+    'crates/retro-testkit/Cargo.toml',
+    'crates/retro-testkit/src/cleanroom_nrom.rs',
+    'crates/retro-testkit/src/lib.rs',
+    'crates/retro-testkit/src/nes_trace.rs',
     'docs/ARCHITECTURE.md',
     'docs/compatibility/NES_ACCEPTANCE.md',
     'docs/compatibility/CLEANROOM_NROM_PROVENANCE.md',
@@ -68,13 +90,23 @@ $exactFiles = @(
     'docs/PROPOSAL_REVIEW.md',
     'docs/TEST_PROVENANCE.md',
     'docs/UNIVERSAL_RETRO_EMULATOR_PROPOSAL.md',
+    'fuzz/.gitignore',
+    'fuzz/Cargo.lock',
+    'fuzz/Cargo.toml',
+    'fuzz/fuzz_targets/parse_ines.rs',
+    'fuzz/fuzz_targets/parse_nestest_log.rs',
     'LICENSE',
     'NOTICE',
     'README.md',
     'ROADMAP.md',
     'SECURITY.md',
     'rust-toolchain.toml',
-    'tools/generate-cleanroom-nrom.py'
+    'tools/check-cleanroom-nrom.py',
+    'tools/curate-nes6502-vectors.ps1',
+    'tools/generate-cleanroom-nrom.py',
+    'tools/publish-github.ps1',
+    'tools/run-fuzz.ps1',
+    'tools/test_generate_cleanroom_nrom.py'
 )
 
 function Test-PublishablePath {
@@ -83,11 +115,7 @@ function Test-PublishablePath {
     if ($exactFiles -contains $Path) {
         return $true
     }
-    return $Path -match '^\.github/workflows/[^/]+\.ya?ml$' -or
-        $Path -match '^crates/[^/]+/Cargo\.toml$' -or
-        $Path -match '^crates/[^/]+/src/.+\.rs$' -or
-        $Path -match '^fuzz/(?:Cargo\.(?:toml|lock)|\.gitignore|fuzz_targets/.+\.rs)$' -or
-        $Path -match '^tools/[^/]+\.ps1$'
+    return $false
 }
 
 function Assert-SafePublishFile {

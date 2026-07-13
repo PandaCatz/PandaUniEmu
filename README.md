@@ -18,6 +18,12 @@ covering parser offset and PRG-RAM preload integration. This is mapper-0
 evidence, not proof of reset timing, bus-cycle order, PPU/APU behavior, MMC1
 support, or gameplay.
 
+The clean-room generator is also checked automatically from bounded raw files
+at the exact pinned py65 revision. Hostile missing, oversized, changed, and
+stale inputs are rejected, and all three cases run through a spawned release
+CLI process in the test suite. This improves reproducibility and process-boundary
+evidence; the strict external `nestest-v1` gate remains unrun.
+
 This project targets a native Rust application with independently testable NES,
 Game Boy Advance, Sega Genesis / Mega Drive, and SNES cores behind one frontend.
 The first shippable target is deliberately smaller: a verified NES vertical slice

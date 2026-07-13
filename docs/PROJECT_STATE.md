@@ -17,6 +17,32 @@ frontend, or playable emulation.
 
 ## Implemented this session
 
+- Automated clean-room evidence regeneration without committing upstream files:
+  a bounded downloader fetches only the py65 license and six executed source
+  files at the exact revision, and the generator validates every raw LF hash
+  before compiling source bytes in memory.
+- Replaced Windows-checkout-dependent py65 hashes with the raw pinned-revision
+  byte identities. This changed only the recorded oracle-source identity in the
+  generated module; all three project-owned image and trace hashes remain the
+  same. The module now has SHA-256
+  `02f88830b4af0d46b3ba542a713c4fddd94f6c9af4f9b49e69d92bc03a3bfab5`.
+- Added generator `--check`, same-handle bounded reads, and six stdlib regression
+  tests covering two identical generations, exact-limit acceptance,
+  limit-plus-one, missing, same-length changed, stale, truncated, trailing, and
+  missing-output rejection without repair.
+- Added a Rust integration test that spawns the compiled `retro-cli` process for
+  NROM-128, NROM-256, and trainer-bearing NROM-128 files and requires exit zero,
+  empty standard error, and the complete 47-row/46-transition/152-cycle summary.
+- Hardened CI to read-only contents permission and credential-free checkouts;
+  added a separate pinned Python 3.13.5 clean-room evidence matrix on Windows
+  and Ubuntu. Replaced publisher path patterns with individually enumerated
+  paths. Local generator verification, format, warnings-denied clippy, 69 debug
+  tests, 69 release tests, release doc tests, and the release app passed.
+- Fresh adversarial review found two P2 defense-in-depth gaps: Ubuntu-only
+  generator automation and publisher path patterns broader than the reviewed
+  snapshot. Adding the Windows evidence leg and fully enumerating the publisher
+  fixed both. Re-review found no remaining P0-P2 issues, and the deletion-safe
+  53-file preview passed without a GitHub write.
 - Adopted `GPL-2.0-or-later` for project-owned code and documentation, added the
   canonical GPLv2 text at the repository root, declared the SPDX expression in
   every Rust package, and documented that `NOTICE` material and operator ROMs
@@ -101,8 +127,8 @@ nightly-2026-07-12 on 2026-07-13:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 68 passed, 0 failed.
-- Release tests: 68 passed, 0 failed; doc tests passed.
+- Debug tests: 69 passed, 0 failed.
+- Release tests: 69 passed, 0 failed; doc tests passed.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash

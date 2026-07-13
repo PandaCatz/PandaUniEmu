@@ -115,6 +115,7 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 Run from `H:\claaaude\universal-retro-emulator`:
 
 ```powershell
+python tools/check-cleanroom-nrom.py
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
@@ -137,8 +138,8 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 68 passed, 0 failed.
-- Release tests: 68 passed, 0 failed; doc tests passed.
+- Debug tests: 69 passed, 0 failed.
+- Release tests: 69 passed, 0 failed; doc tests passed.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -200,6 +201,22 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   is published. GitHub Actions run `29267749389` passed all four stable/fuzz
   jobs on Windows 2025 and Ubuntu 24.04, including the release app and 10,000
   executions of each parser fuzz target.
+- The clean-room automation extension corrected checkout-line-ending-dependent
+  py65 hashes to raw LF source hashes and regenerated the module at SHA-256
+  `02f88830b4af0d46b3ba542a713c4fddd94f6c9af4f9b49e69d92bc03a3bfab5`.
+  The downloader and generator cap each external file at 1,000,000 bytes and
+  validate all seven hashes before oracle execution. Six hostile/deterministic
+  Python tests and a spawned compiled-CLI test for all three cases pass.
+- CI now has read-only repository permissions, credential-free checkouts, and
+  a separate Windows/Ubuntu clean-room evidence matrix with immutable
+  checkout/setup-python pins and Python 3.13.5. The publisher now accepts only
+  individually enumerated paths. Local format, warnings-denied clippy, 69 debug
+  tests, 69 release tests, release doc tests, and the release app pass.
+- Fresh review found two P2 defense-in-depth gaps: the evidence job was
+  Ubuntu-only and publisher path patterns were broader than the reviewed
+  snapshot. The Windows evidence leg and fully enumerated publisher inventory
+  fixed both; re-review found no remaining P0-P2 issues. The deletion-safe
+  53-file publisher preview passed and made no GitHub writes.
 - An operator-owned mapper-1 image was identified and retained only under the
   ignored `external-fixtures/` directory. Its header is valid, but the current
   NROM-only trace boundary correctly rejected it before emulation. MMC1 remains

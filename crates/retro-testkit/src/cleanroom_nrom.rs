@@ -102,7 +102,7 @@ impl CleanroomCase {
 
 pub const PY65_COMMIT: &str = "3138e1b337734a9b2ac1ea90ee7a453514436221";
 pub const PY65_CPU_SHA256: &str =
-    "bdae2b7ef3e2a38519a007412280107f330c6fc6433738364578fe8338e57e7e";
+    "15d93835b4f279b702270d9a0b417938291347ec57cc12d9e0307cd344d381fe";
 pub const CASES: &[CleanroomCase] = &[
     CleanroomCase {
         name: "nrom128",
