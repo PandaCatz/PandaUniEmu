@@ -100,6 +100,8 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   `cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f`.
 - Published the independent single-step-oracle checkpoint as commit
   `e5f3a4d73738e908b0c2d2fce8c372182a9141fc`.
+- Published the clean-room NROM mapper-integration checkpoint as commit
+  `53c65b20e9d572bfe64bdaf0613481dba87d21a3`.
 
 ## Required commands
 
@@ -177,6 +179,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   validates the final in-root target from the same locked handle it reads.
   Focused re-review found no remaining P0-P2 issue. A guarded, deletion-safe
   49-file publisher preview passed and excluded operator fixtures.
+- Clean-room NROM mapper-integration checkpoint
+  `53c65b20e9d572bfe64bdaf0613481dba87d21a3` is published. GitHub Actions run
+  `29265895004` passed stable format/lint/debug/release/app gates and both
+  10,000-run parser fuzz jobs on Windows 2025 and Ubuntu 24.04.
 - An operator-owned mapper-1 image was identified and retained only under the
   ignored `external-fixtures/` directory. Its header is valid, but the current
   NROM-only trace boundary correctly rejected it before emulation. MMC1 remains

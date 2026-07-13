@@ -152,6 +152,12 @@ The clean-room NROM checkpoint passed a deletion-safe 49-file publisher preview.
 No managed remote file was missing, non-allowlisted remote files remain
 preserved, and no operator fixture was included.
 
+Clean-room NROM mapper-integration checkpoint
+`53c65b20e9d572bfe64bdaf0613481dba87d21a3` is published. GitHub Actions run
+`29265895004` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu 24.04,
+including format, warnings-denied lint, debug/release tests, the release app,
+and 10,000 executions of each parser fuzz target.
+
 ## Key decisions
 
 - External ROMs and reference logs always remain operator-supplied and
