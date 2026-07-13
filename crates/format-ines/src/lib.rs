@@ -10,6 +10,7 @@ const CHR_UNIT: usize = 8 * 1024;
 const PRG_RAM_UNIT: usize = 8 * 1024;
 const MAX_PRG_ROM: usize = 64 * 1024 * 1024;
 const MAX_CHR_ROM: usize = 32 * 1024 * 1024;
+pub const MAX_IMAGE_BYTES: usize = HEADER_LEN + TRAINER_LEN + MAX_PRG_ROM + MAX_CHR_ROM;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ImageFormat {

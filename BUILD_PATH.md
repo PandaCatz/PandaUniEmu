@@ -2,9 +2,10 @@
 
 This is the execution order for turning the plan into code. The shared contract,
 iNES parser, NES cartridge boundary, testkit, CLI, parser fuzz targets,
-trace-first CPU layer, mapper-0 CPU bus, and generated trace runner now exist.
-Independent CPU-oracle verification, PPU/APU/runtime scheduling, and the
-frontend remain work, not claims of implementation.
+trace-first CPU layer, mapper-0 CPU bus, generated trace runner, and bounded
+operator-path trace command now exist. Independent CPU-oracle verification,
+PPU/APU/runtime scheduling, and the frontend remain work, not claims of
+implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -157,9 +158,11 @@ result, and date. Performance gates use release builds and measured budgets.
    documented-opcode CPU layer.
 4. Completed: connect a minimal mapper-0 CPU bus and implement a defensive,
    independently fuzzed reference-log parser plus generated trace runner.
-5. Match against an operator-supplied `nestest` oracle and close every declared
+5. Completed: pin the intended `nestest` V1.00 distribution identity, record its
+   unresolved redistribution status, and add a bounded sanitized local CLI.
+6. Match against an operator-supplied `nestest` oracle and close every declared
    semantic/cycle divergence.
-6. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,
+7. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,
    and a dot-timed PPU oracle.
-7. Reach the headless NROM video/audio gate, then resolve and spike
+8. Reach the headless NROM video/audio gate, then resolve and spike
    `winit`/`wgpu`/`cpal` for the minimal frontend.

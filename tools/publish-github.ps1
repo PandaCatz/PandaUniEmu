@@ -24,6 +24,15 @@ $exactFiles = @(
     'Cargo.lock',
     'Cargo.toml',
     'COPYING',
+    'docs/ARCHITECTURE.md',
+    'docs/compatibility/NES_ACCEPTANCE.md',
+    'docs/compatibility/NESTEST_PROCEDURE.md',
+    'docs/compatibility/NESTEST_PROVENANCE.md',
+    'docs/CPU_6502.md',
+    'docs/PROJECT_STATE.md',
+    'docs/PROPOSAL_REVIEW.md',
+    'docs/TEST_PROVENANCE.md',
+    'docs/UNIVERSAL_RETRO_EMULATOR_PROPOSAL.md',
     'LICENSE',
     'NOTICE',
     'README.md',
@@ -41,7 +50,6 @@ function Test-PublishablePath {
     return $Path -match '^\.github/workflows/[^/]+\.ya?ml$' -or
         $Path -match '^crates/[^/]+/Cargo\.toml$' -or
         $Path -match '^crates/[^/]+/src/.+\.rs$' -or
-        $Path -match '^docs/(?:.+/)?[^/]+\.md$' -or
         $Path -match '^fuzz/(?:Cargo\.(?:toml|lock)|\.gitignore|fuzz_targets/.+\.rs)$' -or
         $Path -match '^tools/[^/]+\.ps1$'
 }

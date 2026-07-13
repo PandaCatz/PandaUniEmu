@@ -1,9 +1,12 @@
-use core_nes::{CpuBusFault, NesCartridge, NromCpuBus};
+use core_nes::{CartridgeError, CpuBusFault, NesCartridge, NromCpuBus};
 use cpu_6502::{Cpu, CpuError, CpuState, decode};
 use format_ines::Region;
-use format_nestest_log::{ReferenceLog, ReferenceRow};
+use format_nestest_log::{ParseError as ReferenceParseError, ReferenceLog, ReferenceRow};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+
+pub const MAX_NROM_IMAGE_BYTES: usize = 16 + 512 + 32 * 1024 + 8 * 1024;
+pub const MAX_REFERENCE_LOG_BYTES: usize = format_nestest_log::MAX_INPUT_BYTES;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TraceSummary {
@@ -37,6 +40,10 @@ pub enum TraceFailure {
         opcode: u8,
         expected: u8,
         actual: u8,
+    },
+    UnsupportedOpcode {
+        line: usize,
+        opcode: u8,
     },
     Cpu {
         line: usize,
@@ -74,6 +81,10 @@ impl Display for TraceFailure {
                     "opcode-byte length mismatch at reference line {line}"
                 )
             }
+            Self::UnsupportedOpcode { line, opcode } => write!(
+                formatter,
+                "unsupported opcode ${opcode:02X} at reference line {line}"
+            ),
             Self::Cpu { line, source } => {
                 write!(formatter, "CPU error at reference line {line}: {source}")
             }
@@ -92,6 +103,46 @@ impl Error for TraceFailure {
             _ => None,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TraceInputFailure {
+    Image(format_ines::ParseError),
+    Cartridge(CartridgeError),
+    Reference(ReferenceParseError),
+    Trace(TraceFailure),
+}
+
+impl Display for TraceInputFailure {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Image(source) => write!(formatter, "ROM parse failed: {source}"),
+            Self::Cartridge(source) => write!(formatter, "unsupported cartridge: {source}"),
+            Self::Reference(source) => write!(formatter, "reference-log parse failed: {source}"),
+            Self::Trace(source) => write!(formatter, "trace comparison failed: {source}"),
+        }
+    }
+}
+
+impl Error for TraceInputFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Image(source) => Some(source),
+            Self::Cartridge(source) => Some(source),
+            Self::Reference(source) => Some(source),
+            Self::Trace(source) => Some(source),
+        }
+    }
+}
+
+pub fn compare_nrom_trace_bytes(
+    image: &[u8],
+    reference: &[u8],
+) -> Result<TraceSummary, TraceInputFailure> {
+    let parsed = format_ines::parse(image).map_err(TraceInputFailure::Image)?;
+    let cartridge = NesCartridge::from_parsed(parsed).map_err(TraceInputFailure::Cartridge)?;
+    let reference = format_nestest_log::parse(reference).map_err(TraceInputFailure::Reference)?;
+    compare_nrom_trace(cartridge, &reference).map_err(TraceInputFailure::Trace)
 }
 
 pub fn compare_nrom_trace(
@@ -127,17 +178,20 @@ pub fn compare_nrom_trace(
             });
         }
 
-        if let Some(instruction) = decode(row.opcode_bytes()[0]) {
-            let expected_len = instruction.instruction_bytes();
-            let actual_len = row.opcode_bytes().len() as u8;
-            if actual_len != expected_len {
-                return Err(TraceFailure::OpcodeLengthMismatch {
-                    line: row.line,
-                    opcode: row.opcode_bytes()[0],
-                    expected: expected_len,
-                    actual: actual_len,
-                });
-            }
+        let opcode = row.opcode_bytes()[0];
+        let instruction = decode(opcode).ok_or(TraceFailure::UnsupportedOpcode {
+            line: row.line,
+            opcode,
+        })?;
+        let expected_len = instruction.instruction_bytes();
+        let actual_len = row.opcode_bytes().len() as u8;
+        if actual_len != expected_len {
+            return Err(TraceFailure::OpcodeLengthMismatch {
+                line: row.line,
+                opcode,
+                expected: expected_len,
+                actual: actual_len,
+            });
         }
 
         let mut actual_opcode = Vec::with_capacity(row.opcode_bytes().len());
@@ -210,6 +264,15 @@ mod tests {
         NesCartridge::from_parsed(parsed).expect("generated NROM cartridge is supported")
     }
 
+    fn image_with_program(program: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0; 16 + 16 * 1024 + 8 * 1024];
+        bytes[0..4].copy_from_slice(b"NES\x1a");
+        bytes[4] = 1;
+        bytes[5] = 1;
+        bytes[16..16 + program.len()].copy_from_slice(program);
+        bytes
+    }
+
     fn parse_log(rows: &str) -> ReferenceLog {
         format_nestest_log::parse(rows.as_bytes()).expect("generated reference log parses")
     }
@@ -228,6 +291,31 @@ mod tests {
         assert_eq!(summary.final_state.pc, 0xc003);
         assert_eq!(summary.final_state.x, 1);
         assert_eq!(summary.final_state.total_cycles, 11);
+    }
+
+    #[test]
+    fn byte_entry_point_parses_and_compares_without_runtime_reparsing() {
+        let image = image_with_program(&[0xa9, 0x01, 0xaa, 0xea]);
+        let log = b"C000 A9 01 LDA A:00 X:00 Y:00 P:24 SP:FD CYC:7\n\
+                    C002 AA TAX A:01 X:00 Y:00 P:24 SP:FD CYC:9\n\
+                    C003 EA NOP A:01 X:01 Y:00 P:24 SP:FD CYC:11";
+        let summary = compare_nrom_trace_bytes(&image, log).expect("generated byte inputs match");
+        assert_eq!(summary.rows_matched, 3);
+        assert_eq!(summary.transitions_verified, 2);
+    }
+
+    #[test]
+    fn byte_entry_point_preserves_failure_layer() {
+        assert!(matches!(
+            compare_nrom_trace_bytes(b"not an image", b"not a log"),
+            Err(TraceInputFailure::Image(_))
+        ));
+
+        let image = image_with_program(&[0xea]);
+        assert!(matches!(
+            compare_nrom_trace_bytes(&image, b"hostile marker"),
+            Err(TraceInputFailure::Reference(_))
+        ));
     }
 
     #[test]
@@ -258,6 +346,19 @@ mod tests {
                 opcode: 0xa9,
                 expected: 2,
                 actual: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_opcode_on_final_sentinel_row() {
+        let cartridge = cartridge_with_program(&[0x02], false);
+        let log = parse_log("C000 02 JAM A:00 X:00 Y:00 P:24 SP:FD CYC:7");
+        assert_eq!(
+            compare_nrom_trace(cartridge, &log),
+            Err(TraceFailure::UnsupportedOpcode {
+                line: 1,
+                opcode: 0x02,
             })
         );
     }

@@ -36,7 +36,8 @@ The workspace contains seven functional crates:
   minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults.
 - `retro-testkit`: deterministic synthetic core, capture hashes, and generated
   mapper-0 CPU reference-trace comparison.
-- `retro-cli`: real headless executable for the synthetic core.
+- `retro-cli`: headless synthetic smoke executable plus bounded, sanitized
+  operator-path NROM/reference-trace command.
 - `cpu-6502`: trace-first documented 2A03 instruction layer with explicit
   addressing, flags, cycle totals, stack/control flow, and decode metadata.
 
@@ -65,6 +66,11 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   side-effect-free diagnostic reads, and explicit faults for missing devices.
 - Added an isolated bounded `nestest`-style log parser, generated end-to-end
   trace comparison, and a second ASan fuzz target. No external fixture was used.
+- Pinned Kevin Horton's `nestest` V1.00 identity and hashes. No explicit
+  redistribution license was found, so fixtures remain operator-supplied only.
+- Added `retro-cli nes-trace <ROM_PATH> <LOG_PATH>` with bounded reads,
+  path/content-safe diagnostics, stable exit statuses, and generated real-file
+  boundary tests.
 - Published the verified foundation as commit
   `b7c3182a8672db0bed814951cd9d959fa8eb8f7a` and its handoff update as commit
   `4515511c154c1e5fe39a45c750bda45a71569ed3`.
@@ -98,8 +104,8 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 49 passed, 0 failed.
-- Release tests: 49 passed, 0 failed; doc tests passed.
+- Debug tests: 58 passed, 0 failed.
+- Release tests: 58 passed, 0 failed; doc tests passed.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -111,13 +117,16 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
   `29254844214` passed all four jobs: stable tests and both 10,000-run parser
   ASan fuzz targets on Windows 2025 and Ubuntu 24.04.
+- The provenance/operator-CLI milestone is locally verified but not yet
+  published. No external fixture was found or run.
 
 ## Next tasks, in order
 
-1. Verify the exact upstream/revision/license for the intended `nestest` pair
-   and add a sanitized local CLI entry point that accepts operator paths.
-2. Run the operator-supplied ROM/log without committing either; fix
-   every architectural-state or cycle divergence.
+1. Obtain an operator-supplied ROM/log matching a reviewed identity in
+   `docs/compatibility/NESTEST_PROVENANCE.md`, record local hashes in the ignored
+   run record, and run the new CLI without committing either fixture.
+2. Fix every observed architectural-state or cycle divergence and rerun the
+   complete external trace until it passes.
 3. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the
    missing interrupt sampling and per-cycle behavior.
 4. Add the first master-clock scheduler and dot-timed PPU oracle.

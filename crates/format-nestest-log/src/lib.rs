@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-const MAX_LOG_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 512;
 const MAX_ROWS: usize = 50_000;
 
@@ -143,10 +143,10 @@ impl Display for ParseError {
 impl Error for ParseError {}
 
 pub fn parse(input: &[u8]) -> Result<ReferenceLog, ParseError> {
-    if input.len() > MAX_LOG_BYTES {
+    if input.len() > MAX_INPUT_BYTES {
         return Err(ParseError::InputTooLarge {
             size: input.len(),
-            maximum: MAX_LOG_BYTES,
+            maximum: MAX_INPUT_BYTES,
         });
     }
     if !input.is_ascii() {
@@ -335,10 +335,10 @@ mod tests {
     #[test]
     fn rejects_oversized_input_and_line() {
         assert_eq!(
-            parse(&vec![b'A'; MAX_LOG_BYTES + 1]),
+            parse(&vec![b'A'; MAX_INPUT_BYTES + 1]),
             Err(ParseError::InputTooLarge {
-                size: MAX_LOG_BYTES + 1,
-                maximum: MAX_LOG_BYTES,
+                size: MAX_INPUT_BYTES + 1,
+                maximum: MAX_INPUT_BYTES,
             })
         );
         assert_eq!(

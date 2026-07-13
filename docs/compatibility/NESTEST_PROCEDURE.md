@@ -1,15 +1,16 @@
 # Nestest Comparison Procedure
 
-Status: the bus, bounded log parser, and comparison runner are exercised with
-generated data. No reviewed operator-supplied ROM/reference pair has been run.
+Status: the bus, bounded log parser, comparison runner, and operator-path CLI
+are exercised with generated data. No operator-supplied ROM/reference pair has
+been run.
 
 ## Fixture boundary
 
 The operator supplies `nestest.nes` and its matching reference log outside the
-repository. Before the first run, record the upstream URL, revision/date,
-license or redistribution terms, and SHA-256 of both files in an ignored
-`external-fixtures/` run record. Do not acquire, copy, or publish either file
-until those details have been independently verified.
+repository. The reviewed identity and unresolved redistribution status are in
+`NESTEST_PROVENANCE.md`. Before the first run, verify and record the SHA-256 of
+both local files in an ignored `external-fixtures/` run record. Never copy or
+publish either fixture in this repository.
 
 ## Comparison convention
 
@@ -23,8 +24,10 @@ until those details have been independently verified.
    cycles with the corresponding reference row. Opcode bytes are diagnostic
    context and must match bytes read through the mapped CPU bus.
 5. For every row except the final row, execute exactly one instruction. Stop at
-   the first mismatch and record the row number, both states, opcode bytes, and
-   the immediately preceding row.
+   the first mismatch. State mismatches report both architectural states and the
+   preceding expected PC; opcode mismatches report the PC and expected/actual
+   bytes; CPU and bus faults report their line and structured cause. Diagnostics
+   never include a raw row or operator path.
 6. Treat the final row as the expected post-state sentinel for the preceding
    transition; compare its state and opcode bytes but do not execute it. A pass
    is zero mismatches and exactly `row_count - 1` verified transitions. Early
@@ -42,6 +45,24 @@ implemented in the log parser, not hidden in the CPU comparison.
   a dedicated fuzz target.
 - Implemented: runner initialization from the first row without unrecorded
   reset cycles, plus generated state/opcode/cycle/fault comparison tests.
-- Still required for an external run: reviewed fixture source/revision/license,
-  a local CLI, and a sanitized run record containing hashes and the first
-  divergence but never fixture bytes or operator paths.
+- Implemented: bounded operator-path CLI with sanitized diagnostics and distinct
+  exit statuses.
+- Still required: an operator-supplied fixture pair matching a reviewed identity
+  and a sanitized local run record. The absence of an explicit redistribution
+  license is recorded; neither file may be added to the repository.
+
+## Local command
+
+```powershell
+cargo run --release -p retro-cli -- nes-trace <ROM_PATH> <LOG_PATH>
+```
+
+The CLI reads at most 41,488 bytes for the supported NROM image and 4 MiB for the
+log. It accepts OS-native paths but never prints either path or raw log rows.
+Success prints a single `nes-trace-v1` summary. A mismatch prints only sanitized
+architectural state for the first divergence.
+
+Exit statuses are stable: `0` pass, `1` CPU/bus/trace divergence, `2` invalid
+arguments, `3` unreadable or oversized input, and `4` malformed or unsupported
+fixture data. The no-argument command remains the deterministic synthetic smoke
+run used by CI.

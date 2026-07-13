@@ -4,8 +4,9 @@ Status: the Phase 1 headless foundation is implemented and the NES vertical
 slice is in progress. Shared contracts, a defensive NES image parser, the
 parsed-cartridge boundary, synthetic test core, headless CLI, parser fuzzing,
 a trace-first 2A03 CPU layer, mapper-0 CPU bus, and generated reference-trace
-runner exist. The CPU has not yet passed an operator-supplied independent
-`nestest` oracle, and playable console emulation does not exist yet.
+runner exist. A bounded operator-path trace command and reviewed `nestest`
+identity metadata also exist, but the CPU has not yet passed an operator-supplied
+independent oracle and playable console emulation does not exist yet.
 
 This project targets a native Rust application with independently testable NES,
 Game Boy Advance, Sega Genesis / Mega Drive, and SNES cores behind one frontend.
@@ -23,6 +24,8 @@ measurable video and audio output.
   original proposal.
 - [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) is the living handoff for future
   sessions.
+- [docs/compatibility/NESTEST_PROVENANCE.md](docs/compatibility/NESTEST_PROVENANCE.md)
+  pins the intended external CPU oracle without redistributing it.
 - [CLAUDE.md](CLAUDE.md) is the concise agent handoff: completed work, verified
   commands, current limitations, and the exact next-task order.
 

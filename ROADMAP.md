@@ -3,9 +3,10 @@
 Current progress: the Phase 1 headless contracts, parser, synthetic core,
 capture path, CLI, and verification gates are implemented. Phase 2 now has an
 instruction-oriented CPU, mapper-0 CPU bus, hostile reference-log parser, and
-generated trace runner; the independent external trace remains open. The host
-frontend intentionally follows the verified headless NES path. See `CLAUDE.md`
-for evidence and exact next tasks.
+generated trace runner. The bounded operator-path CLI and exact external-fixture
+identity are documented; the operator-supplied independent trace run remains
+open. The host frontend intentionally follows the verified headless NES path.
+See `CLAUDE.md` for evidence and exact next tasks.
 
 Estimates below are ranges for one experienced developer working close to full
 time. Part-time work, learning the hardware while implementing it, broad game

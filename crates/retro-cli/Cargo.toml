@@ -6,9 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-retro-core = { path = "../retro-core" }
 retro-testkit = { path = "../retro-testkit" }
 
 [lints]
 workspace = true
-

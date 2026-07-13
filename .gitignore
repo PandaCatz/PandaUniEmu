@@ -10,6 +10,7 @@
 *.gen
 *.bin
 *.rom
+*.log
 
 # Keep project documentation despite the Genesis .md extension collision.
 !README.md
@@ -17,4 +18,3 @@
 !BUILD_PATH.md
 !CLAUDE.md
 !docs/**/*.md
-
