@@ -53,16 +53,19 @@ The workspace contains seven functional crates:
   reviewed fixture size/hash matrix before parsing.
 - `cpu-6502`: trace-first 2A03 instruction layer with all 151 documented and the
   76 stable undocumented encodings exercised by `nestest`, explicit addressing,
-  flags, cycle totals, stack/control flow, decode metadata, and a pinned MIT
-  documented-opcode single-step oracle sample.
+  flags, cycle totals, stack/control flow, decode metadata, a pinned MIT
+  documented-opcode single-step oracle sample, and instruction-granular
+  interrupt/reset handling (edge-triggered NMI, level-triggered IRQ, the
+  one-instruction `I`-flag delay, and the seven-cycle interrupt/reset sequences).
 
 The fuzz project calls both format parsers with arbitrary bytes. The checked-in
 launcher generates redistribution-safe seeds and handles the Windows
 AddressSanitizer runtime path.
 
 Not implemented: `retro-frontend`, a complete NES machine, PPU/APU/I/O bus
-devices, per-bus-cycle CPU sequencing, IRQ/NMI sampling, DMA, scheduler, input
-hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
+devices, per-bus-cycle CPU sequencing (including per-cycle interrupt/reset bus
+order and NMI hijacking), DMA, scheduler, input hardware, SRAM persistence, save
+states, rewind, or any GBA/Genesis/SNES code.
 
 ## Completed work
 
@@ -137,6 +140,20 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 - Published the automated clean-room evidence checkpoint as commit
   `1fedfd85944c4ca58261cff4f823ace04686533d` and its cross-platform LF fix as
   commit `f6cf9bc38f895ae839495c76f3adb01963966a6b`.
+- Implemented architectural interrupt and reset handling in `cpu-6502` on the
+  instruction-stepped model, fully additive so the instruction path and the
+  `nestest` trace are unchanged. Added edge-triggered NMI and level-triggered IRQ
+  line inputs, a `pending_interrupt` poll with NMI-over-IRQ priority and IRQ
+  masked by the `I` flag, `service_interrupt` for the seven-cycle frame (return
+  address and status pushed with `B` clear, `I` set, NMI `$FFFA`/IRQ `$FFFE`
+  vector), a shared frame helper reused by `BRK` (with `B` set), the
+  one-instruction `I`-flag delay for `CLI`/`SEI`/`PLP` versus immediate `RTI`,
+  and a warm `reset` (SP −3 without writing, `I` set, latched NMI dropped, `PC`
+  from `$FFFC`, registers preserved). Both entry paths reserve seven cycles
+  before any bus access. Added 14 focused tests and left per-cycle interrupt/reset
+  bus order, dummy reads/writes, RMW double-writes, sub-instruction poll timing,
+  and NMI hijacking explicitly deferred. A four-lens adversarial review found no
+  real P0-P2 defect.
 
 ## Required commands
 
@@ -167,8 +184,12 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 76 passed, 0 failed.
-- Release tests: 76 passed, 0 failed; doc tests passed.
+- Debug tests: 90 passed, 0 failed (14 new interrupt/reset tests in `cpu-6502`).
+- Release tests: 90 passed, 0 failed; doc tests passed.
+- After the interrupt work, the strict `nestest-v1` full trace was re-run and is
+  byte-for-byte unregressed (8,991 rows / 8,990 transitions, final `PC=C66E`,
+  `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`, 26,554 cycles). A four-lens
+  adversarial review of the interrupt model found no real P0-P2 defect.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -266,8 +287,11 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 
 ## Next tasks, in order
 
-1. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the
-   missing interrupt sampling and per-cycle behavior.
+1. Done: architectural IRQ/NMI/reset sampling and entry with focused tests.
+   Remaining CPU gate: convert the instruction-stepped core to per-cycle bus
+   behavior (exact per-cycle access order, dummy reads/writes, RMW double-writes,
+   sub-instruction interrupt-poll timing, and NMI hijacking of an in-progress
+   BRK/IRQ sequence), validated against the SingleStepTests per-cycle bus traces.
 2. Add the first master-clock scheduler and dot-timed PPU oracle.
 3. Reach a deterministic headless NROM video/audio checkpoint.
 4. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,

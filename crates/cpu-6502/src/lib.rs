@@ -428,6 +428,36 @@ pub struct StepTrace {
     pub cycles: u8,
 }
 
+/// A hardware interrupt source sampled on the CPU's interrupt lines.
+///
+/// `Nmi` is edge-triggered and cannot be masked. `Irq` is level-triggered and is
+/// only recognized while the interrupt-disable (`I`) flag is clear.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Interrupt {
+    Nmi,
+    Irq,
+}
+
+impl Interrupt {
+    #[must_use]
+    const fn vector(self) -> u16 {
+        match self {
+            Self::Nmi => NMI_VECTOR,
+            Self::Irq => IRQ_VECTOR,
+        }
+    }
+}
+
+/// The architectural effect of servicing a hardware interrupt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InterruptEntry {
+    pub kind: Interrupt,
+    pub before: CpuState,
+    pub after: CpuState,
+    pub vector: u16,
+    pub cycles: u8,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CpuError {
     UnsupportedOpcode { pc: u16, opcode: u8 },
@@ -455,16 +485,44 @@ impl Error for CpuError {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cpu {
     state: CpuState,
+    /// Last observed level of the NMI line (`true` when asserted), used to detect
+    /// the high-to-low edge that latches an NMI.
+    nmi_level: bool,
+    /// A latched NMI edge awaiting service. Cleared only when the NMI is serviced
+    /// or the CPU is reset.
+    nmi_pending: bool,
+    /// Current level of the IRQ line (`true` when asserted). IRQ is level-driven,
+    /// so it is re-evaluated at every interrupt poll rather than latched.
+    irq_level: bool,
+    /// The interrupt-disable (`I`) flag value the most recent interrupt poll
+    /// observed. This honors the one-instruction delay of `CLI`/`SEI`/`PLP`,
+    /// whose flag change lands after the poll.
+    poll_interrupt_disable: bool,
 }
 
 // Eight is the largest cycle total among the documented instructions and the
 // stable undocumented encodings exercised by the accepted nestest trace.
 const MAX_INSTRUCTION_CYCLES: u64 = 8;
 
+// Hardware interrupt entry (IRQ, NMI, and the BRK software interrupt) and the
+// reset sequence each take seven cycles at the architectural granularity this
+// crate models.
+const INTERRUPT_CYCLES: u64 = 7;
+
+const NMI_VECTOR: u16 = 0xfffa;
+const RESET_VECTOR: u16 = 0xfffc;
+const IRQ_VECTOR: u16 = 0xfffe;
+
 impl Cpu {
     #[must_use]
     pub fn new(state: CpuState) -> Self {
-        let mut cpu = Self { state };
+        let mut cpu = Self {
+            state,
+            nmi_level: false,
+            nmi_pending: false,
+            irq_level: false,
+            poll_interrupt_disable: state.status & FLAG_INTERRUPT_DISABLE != 0,
+        };
         cpu.normalize_status();
         cpu
     }
@@ -476,9 +534,128 @@ impl Cpu {
 
     pub fn power_on(&mut self, bus: &mut impl Bus) -> Result<(), CpuError> {
         self.state = CpuState::default();
-        self.state.pc = read_u16(bus, 0xfffc);
+        self.state.pc = read_u16(bus, RESET_VECTOR);
         self.state.total_cycles = 7;
+        self.nmi_level = false;
+        self.nmi_pending = false;
+        self.irq_level = false;
+        // The power-on state has the `I` flag set.
+        self.poll_interrupt_disable = true;
         Ok(())
+    }
+
+    /// Drives the NMI line. NMI is edge-triggered: a deasserted-to-asserted
+    /// transition latches a pending NMI that survives until it is serviced or the
+    /// CPU is reset.
+    pub fn set_nmi_line(&mut self, asserted: bool) {
+        if asserted && !self.nmi_level {
+            self.nmi_pending = true;
+        }
+        self.nmi_level = asserted;
+    }
+
+    /// Drives the IRQ line. IRQ is level-triggered, so the environment holds the
+    /// line asserted for as long as the request stands.
+    pub fn set_irq_line(&mut self, asserted: bool) {
+        self.irq_level = asserted;
+    }
+
+    /// The interrupt that would be serviced before the next instruction, based on
+    /// the line state and the most recent interrupt poll. NMI outranks IRQ, and a
+    /// level-triggered IRQ is only reported while the polled `I` flag was clear.
+    #[must_use]
+    pub const fn pending_interrupt(&self) -> Option<Interrupt> {
+        if self.nmi_pending {
+            Some(Interrupt::Nmi)
+        } else if self.irq_level && !self.poll_interrupt_disable {
+            Some(Interrupt::Irq)
+        } else {
+            None
+        }
+    }
+
+    /// Services a hardware interrupt: pushes the return address and status (with
+    /// the `B` flag clear), sets the `I` flag, and loads the source's vector. The
+    /// seven-cycle count is reserved before any bus access, so an exhausted cycle
+    /// counter leaves the CPU and bus unchanged.
+    ///
+    /// Callers select `kind` from [`Cpu::pending_interrupt`]. Servicing an NMI
+    /// clears its latched edge. Exact per-cycle interrupt bus order and NMI
+    /// hijacking of a BRK/IRQ sequence are part of the deferred per-cycle
+    /// milestone and are not modeled here.
+    pub fn service_interrupt(
+        &mut self,
+        bus: &mut impl Bus,
+        kind: Interrupt,
+    ) -> Result<InterruptEntry, CpuError> {
+        if self
+            .state
+            .total_cycles
+            .checked_add(INTERRUPT_CYCLES)
+            .is_none()
+        {
+            return Err(CpuError::CycleCounterHeadroomExhausted {
+                remaining: (u64::MAX - self.state.total_cycles) as u8,
+            });
+        }
+
+        let before = self.state;
+        let vector = kind.vector();
+        self.enter_interrupt_frame(bus, vector, false);
+        self.state.total_cycles += INTERRUPT_CYCLES;
+        if kind == Interrupt::Nmi {
+            self.nmi_pending = false;
+        }
+        // The `I` flag is now set; the next poll observes it as set.
+        self.poll_interrupt_disable = true;
+        self.normalize_status();
+        Ok(InterruptEntry {
+            kind,
+            before,
+            after: self.state,
+            vector,
+            cycles: INTERRUPT_CYCLES as u8,
+        })
+    }
+
+    /// Performs a warm reset. Three suppressed stack accesses decrement `SP` by
+    /// three without writing, the `I` flag is set, any latched NMI is dropped, and
+    /// `PC` is loaded from the reset vector. `A`, `X`, `Y`, and the other flags are
+    /// preserved. The seven-cycle count is reserved before any bus access. Exact
+    /// per-cycle reset bus reads are part of the deferred per-cycle milestone.
+    pub fn reset(&mut self, bus: &mut impl Bus) -> Result<(), CpuError> {
+        if self
+            .state
+            .total_cycles
+            .checked_add(INTERRUPT_CYCLES)
+            .is_none()
+        {
+            return Err(CpuError::CycleCounterHeadroomExhausted {
+                remaining: (u64::MAX - self.state.total_cycles) as u8,
+            });
+        }
+
+        self.state.sp = self.state.sp.wrapping_sub(3);
+        self.set_flag(FLAG_INTERRUPT_DISABLE, true);
+        self.state.pc = read_u16(bus, RESET_VECTOR);
+        self.state.total_cycles += INTERRUPT_CYCLES;
+        self.nmi_pending = false;
+        self.poll_interrupt_disable = true;
+        self.normalize_status();
+        Ok(())
+    }
+
+    fn enter_interrupt_frame(&mut self, bus: &mut impl Bus, vector: u16, break_flag: bool) {
+        self.push_u16(bus, self.state.pc);
+        let mut pushed = self.state.status | FLAG_UNUSED;
+        if break_flag {
+            pushed |= FLAG_BREAK;
+        } else {
+            pushed &= !FLAG_BREAK;
+        }
+        self.push(bus, pushed);
+        self.set_flag(FLAG_INTERRUPT_DISABLE, true);
+        self.state.pc = read_u16(bus, vector);
     }
 
     pub fn step(&mut self, bus: &mut impl Bus) -> Result<StepTrace, CpuError> {
@@ -511,6 +688,18 @@ impl Cpu {
             .checked_add(u64::from(cycles))
             .ok_or(CpuError::CycleOverflow)?;
         self.normalize_status();
+        // Sample the interrupt poll for this instruction. `CLI`, `SEI`, and `PLP`
+        // change the `I` flag on their final cycle, after the poll, so the poll
+        // observes the pre-instruction value; every other instruction (including
+        // `RTI`, which takes effect immediately) is observed after its change.
+        self.poll_interrupt_disable = if matches!(
+            instruction.mnemonic,
+            Mnemonic::Cli | Mnemonic::Sei | Mnemonic::Plp
+        ) {
+            before.status & FLAG_INTERRUPT_DISABLE != 0
+        } else {
+            self.state.status & FLAG_INTERRUPT_DISABLE != 0
+        };
         Ok(StepTrace {
             before,
             after: self.state,
@@ -640,11 +829,11 @@ impl Cpu {
                 self.branch(bus, condition)
             }
             Brk => {
+                // BRK skips the padding byte after the opcode, then pushes the
+                // return address and status with the `B` flag set and enters the
+                // IRQ/BRK vector.
                 self.state.pc = self.state.pc.wrapping_add(1);
-                self.push_u16(bus, self.state.pc);
-                self.push(bus, self.state.status | FLAG_BREAK | FLAG_UNUSED);
-                self.set_flag(FLAG_INTERRUPT_DISABLE, true);
-                self.state.pc = read_u16(bus, 0xfffe);
+                self.enter_interrupt_frame(bus, IRQ_VECTOR, true);
                 0
             }
             Jmp => {
@@ -1493,5 +1682,290 @@ mod tests {
         assert_eq!(cpu.state().pc, 0x5678);
         assert_eq!(cpu.state().sp, 0xfd);
         assert_eq!(cpu.state().total_cycles, 7);
+    }
+
+    // Builds a CPU whose status has the interrupt-disable flag clear so IRQ
+    // recognition can be exercised.
+    fn cpu_with_irq_enabled(pc: u16) -> Cpu {
+        let mut state = CpuState::at(pc);
+        state.status = FLAG_UNUSED;
+        cpu_with(state)
+    }
+
+    #[test]
+    fn reset_preserves_registers_sets_interrupt_disable_and_decrements_stack() {
+        let mut ram = Ram::new();
+        ram.data[0xfffc] = 0x00;
+        ram.data[0xfffd] = 0xc0;
+        let mut state = CpuState::at(0x1234);
+        state.a = 0x11;
+        state.x = 0x22;
+        state.y = 0x33;
+        state.sp = 0x80;
+        state.status = FLAG_CARRY | FLAG_OVERFLOW | FLAG_UNUSED;
+        state.total_cycles = 100;
+        let mut cpu = cpu_with(state);
+        // A latched NMI must not survive a reset.
+        cpu.set_nmi_line(true);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Nmi));
+
+        cpu.reset(&mut ram).expect("reset fits the cycle counter");
+
+        assert_eq!(cpu.state().a, 0x11);
+        assert_eq!(cpu.state().x, 0x22);
+        assert_eq!(cpu.state().y, 0x33);
+        assert_eq!(cpu.state().sp, 0x7d);
+        assert_eq!(cpu.state().pc, 0xc000);
+        assert_ne!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        assert_ne!(cpu.state().status & FLAG_CARRY, 0);
+        assert_ne!(cpu.state().status & FLAG_OVERFLOW, 0);
+        assert_eq!(cpu.state().total_cycles, 107);
+        assert_eq!(cpu.pending_interrupt(), None);
+    }
+
+    #[test]
+    fn irq_is_masked_while_interrupt_disable_is_set() {
+        let mut cpu = Cpu::new(CpuState::at(0x8000));
+        assert_ne!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        cpu.set_irq_line(true);
+        assert_eq!(cpu.pending_interrupt(), None);
+    }
+
+    #[test]
+    fn deasserting_the_irq_line_stops_recognition() {
+        let mut cpu = cpu_with_irq_enabled(0x8000);
+        cpu.set_irq_line(true);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Irq));
+        cpu.set_irq_line(false);
+        assert_eq!(cpu.pending_interrupt(), None);
+    }
+
+    #[test]
+    fn irq_enters_its_vector_pushing_status_with_the_break_flag_clear() {
+        let mut ram = Ram::new();
+        ram.data[0xfffe] = 0x00;
+        ram.data[0xffff] = 0x90;
+        let mut cpu = cpu_with_irq_enabled(0x8000);
+        cpu.set_irq_line(true);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Irq));
+
+        let entry = cpu
+            .service_interrupt(&mut ram, Interrupt::Irq)
+            .expect("interrupt entry fits the cycle counter");
+
+        assert_eq!(entry.kind, Interrupt::Irq);
+        assert_eq!(entry.vector, 0xfffe);
+        assert_eq!(entry.cycles, 7);
+        // Return address pushed high byte first.
+        assert_eq!(ram.data[0x01fd], 0x80);
+        assert_eq!(ram.data[0x01fc], 0x00);
+        // Pushed status has B clear and bit 5 set.
+        assert_eq!(ram.data[0x01fb] & FLAG_BREAK, 0);
+        assert_ne!(ram.data[0x01fb] & FLAG_UNUSED, 0);
+        assert_eq!(cpu.state().pc, 0x9000);
+        assert_eq!(cpu.state().sp, 0xfa);
+        assert_ne!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        assert_eq!(cpu.state().total_cycles, 7);
+    }
+
+    #[test]
+    fn nmi_is_edge_triggered_and_ignores_interrupt_disable() {
+        let mut ram = Ram::new();
+        ram.data[0xfffa] = 0x40;
+        ram.data[0xfffb] = 0x80;
+        // Interrupt-disable is set, which must not mask an NMI.
+        let mut cpu = Cpu::new(CpuState::at(0x8000));
+        cpu.set_nmi_line(true);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Nmi));
+
+        let entry = cpu
+            .service_interrupt(&mut ram, Interrupt::Nmi)
+            .expect("interrupt entry fits the cycle counter");
+
+        assert_eq!(entry.vector, 0xfffa);
+        assert_eq!(cpu.state().pc, 0x8040);
+        assert_eq!(ram.data[0x01fb] & FLAG_BREAK, 0);
+        assert_eq!(cpu.pending_interrupt(), None);
+    }
+
+    #[test]
+    fn nmi_requires_a_new_edge_after_being_serviced() {
+        let mut ram = Ram::new();
+        ram.data[0xfffa] = 0x00;
+        ram.data[0xfffb] = 0x90;
+        let mut cpu = Cpu::new(CpuState::at(0x8000));
+        cpu.set_nmi_line(true);
+        cpu.service_interrupt(&mut ram, Interrupt::Nmi)
+            .expect("first NMI is serviced");
+        assert_eq!(cpu.pending_interrupt(), None);
+
+        // The line held asserted does not re-latch without a fresh edge.
+        cpu.set_nmi_line(true);
+        assert_eq!(cpu.pending_interrupt(), None);
+
+        // Deasserting and re-asserting produces a new edge.
+        cpu.set_nmi_line(false);
+        cpu.set_nmi_line(true);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Nmi));
+    }
+
+    #[test]
+    fn nmi_outranks_a_simultaneous_irq() {
+        let mut cpu = cpu_with_irq_enabled(0x8000);
+        cpu.set_irq_line(true);
+        cpu.set_nmi_line(true);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Nmi));
+    }
+
+    #[test]
+    fn cli_delays_irq_recognition_by_one_instruction() {
+        let mut ram = Ram::new();
+        // CLI then NOP.
+        ram.data[0x8000..0x8002].copy_from_slice(&[0x58, 0xea]);
+        let mut cpu = Cpu::new(CpuState::at(0x8000));
+        cpu.set_irq_line(true);
+        assert_eq!(cpu.pending_interrupt(), None);
+
+        cpu.step(&mut ram).expect("CLI executes");
+        // The I flag is now clear, but the poll for CLI observed it set, so the
+        // IRQ is not recognized until after the following instruction.
+        assert_eq!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        assert_eq!(cpu.pending_interrupt(), None);
+
+        cpu.step(&mut ram).expect("NOP executes");
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Irq));
+    }
+
+    #[test]
+    fn sei_delays_masking_so_one_pending_irq_is_still_serviced() {
+        // Follows the driver contract: poll pending_interrupt() before each step
+        // and service when it returns Some. The I flag starts set, so the IRQ is
+        // masked. CLI clears I, but its effect is delayed one instruction, so SEI
+        // is the first instruction whose poll observes I clear. SEI sets I again,
+        // yet its masking is itself delayed, so that poll recognizes the pending
+        // IRQ and lets exactly one through before the line is masked.
+        let mut ram = Ram::new();
+        ram.data[0x8000..0x8003].copy_from_slice(&[0x58, 0x78, 0xea]); // CLI, SEI, NOP
+        ram.data[0xfffe] = 0x00;
+        ram.data[0xffff] = 0x90;
+        let mut cpu = Cpu::new(CpuState::at(0x8000)); // power-on default has I set
+        cpu.set_irq_line(true);
+
+        assert_eq!(cpu.pending_interrupt(), None); // masked by the I flag
+        cpu.step(&mut ram).expect("CLI executes");
+        assert_eq!(cpu.pending_interrupt(), None); // CLI's enable is delayed one instruction
+        cpu.step(&mut ram).expect("SEI executes");
+        assert_ne!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0); // SEI set I again...
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Irq)); // ...yet one IRQ still gets through
+
+        let entry = cpu
+            .service_interrupt(&mut ram, Interrupt::Irq)
+            .expect("the delayed IRQ is serviced");
+        assert_eq!(entry.after.pc, 0x9000);
+        // The line stays asserted, but the I flag now masks it.
+        cpu.step(&mut ram).expect("NOP executes");
+        assert_eq!(cpu.pending_interrupt(), None);
+    }
+
+    #[test]
+    fn plp_delays_irq_recognition_like_cli() {
+        let mut ram = Ram::new();
+        ram.data[0x8000..0x8002].copy_from_slice(&[0x28, 0xea]); // PLP then NOP
+        // Stack holds a status byte with the I flag clear for PLP to pull.
+        ram.data[0x01fe] = FLAG_UNUSED;
+        let mut state = CpuState::at(0x8000);
+        state.sp = 0xfd;
+        let mut cpu = cpu_with(state);
+        assert_ne!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        cpu.set_irq_line(true);
+
+        cpu.step(&mut ram).expect("PLP executes");
+        assert_eq!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        assert_eq!(cpu.pending_interrupt(), None);
+
+        cpu.step(&mut ram).expect("NOP executes");
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Irq));
+    }
+
+    #[test]
+    fn rti_recognizes_a_pending_irq_immediately() {
+        let mut ram = Ram::new();
+        ram.data[0x8000] = 0x40; // RTI
+        // Stack frame: status (I clear), then return PC 0x9000.
+        ram.data[0x01fb] = FLAG_UNUSED;
+        ram.data[0x01fc] = 0x00;
+        ram.data[0x01fd] = 0x90;
+        let mut state = CpuState::at(0x8000);
+        state.sp = 0xfa;
+        let mut cpu = cpu_with(state);
+        assert_ne!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        cpu.set_irq_line(true);
+
+        cpu.step(&mut ram).expect("RTI executes");
+        // RTI's I-flag change takes effect immediately, with no one-instruction
+        // delay, so the pending IRQ is recognized right away.
+        assert_eq!(cpu.state().pc, 0x9000);
+        assert_eq!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Irq));
+    }
+
+    #[test]
+    fn brk_pushes_break_set_while_irq_entry_pushes_it_clear() {
+        let mut brk_ram = Ram::new();
+        brk_ram.data[0x8000] = 0x00; // BRK
+        brk_ram.data[0xfffe] = 0x00;
+        brk_ram.data[0xffff] = 0x90;
+        let mut brk_cpu = Cpu::new(CpuState::at(0x8000));
+        brk_cpu.step(&mut brk_ram).expect("BRK executes");
+        assert_eq!(brk_cpu.state().pc, 0x9000);
+        assert_ne!(brk_ram.data[0x01fb] & FLAG_BREAK, 0);
+
+        let mut irq_ram = Ram::new();
+        irq_ram.data[0xfffe] = 0x00;
+        irq_ram.data[0xffff] = 0x90;
+        let mut irq_cpu = cpu_with_irq_enabled(0x8000);
+        irq_cpu
+            .service_interrupt(&mut irq_ram, Interrupt::Irq)
+            .expect("IRQ entry executes");
+        assert_eq!(irq_cpu.state().pc, 0x9000);
+        assert_eq!(irq_ram.data[0x01fb] & FLAG_BREAK, 0);
+    }
+
+    #[test]
+    fn interrupt_entry_is_failure_atomic_at_the_cycle_ceiling() {
+        let mut ram = Ram::new();
+        ram.data[0xfffe] = 0x00;
+        ram.data[0xffff] = 0x90;
+        let before_ram = ram.data.clone();
+        let mut state = CpuState::at(0x8000);
+        state.status = FLAG_UNUSED;
+        state.total_cycles = u64::MAX - 3;
+        let mut cpu = cpu_with(state);
+        cpu.set_irq_line(true);
+        let before = cpu.state();
+
+        assert_eq!(
+            cpu.service_interrupt(&mut ram, Interrupt::Irq),
+            Err(CpuError::CycleCounterHeadroomExhausted { remaining: 3 })
+        );
+        assert_eq!(cpu.state(), before);
+        assert_eq!(ram.data, before_ram);
+    }
+
+    #[test]
+    fn reset_is_failure_atomic_at_the_cycle_ceiling() {
+        let mut ram = Ram::new();
+        ram.data[0xfffc] = 0x00;
+        ram.data[0xfffd] = 0xc0;
+        let mut state = CpuState::at(0x1234);
+        state.total_cycles = u64::MAX - 3;
+        let mut cpu = cpu_with(state);
+        let before = cpu.state();
+
+        assert_eq!(
+            cpu.reset(&mut ram),
+            Err(CpuError::CycleCounterHeadroomExhausted { remaining: 3 })
+        );
+        assert_eq!(cpu.state(), before);
     }
 }

@@ -7,8 +7,9 @@ single-step oracle sample, clean-room NROM/py65 integration checkpoint, and
 bounded operator-path trace commands now exist.
 The strict command enforces the reviewed fixture identity and expected summary
 shape. The full independent mapper-0 CPU trace now passes all 8,991 rows / 8,990
-transitions. Reset/interrupt bus behavior, PPU/APU/runtime scheduling, and the
-frontend remain work, not claims of implementation.
+transitions. Architectural IRQ/NMI/reset sampling and entry are implemented at
+instruction granularity. Per-cycle interrupt/reset bus behavior, PPU/APU/runtime
+scheduling, and the frontend remain work, not claims of implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -172,7 +173,9 @@ result, and date. Performance gates use release builds and measured budgets.
 8. Completed: match the reviewed operator-authorized `nestest` oracle across
    all 8,991 rows / 8,990 transitions, including its 76 stable undocumented
    encodings, and close every observed architectural/cycle divergence.
-9. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,
-   and a dot-timed PPU oracle.
+9. Interrupt entry is done at instruction granularity (IRQ/NMI/reset sampling,
+   seven-cycle sequences, `I`-flag delay). Next: per-cycle bus behavior and NMI
+   hijacking, DMA-stall behavior, the first master-clock scheduler, and a
+   dot-timed PPU oracle.
 10. Reach the headless NROM video/audio gate, then resolve and spike
    `winit`/`wgpu`/`cpal` for the minimal frontend.

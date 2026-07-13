@@ -5,7 +5,9 @@ Last updated: 2026-07-13
 ## Current phase
 
 The Phase 1 headless foundation is implemented. The Phase 2 NTSC NES vertical
-slice has passed the independent CPU trace and is now at the interrupt and
+slice has passed the independent CPU trace, now has architectural interrupt and
+reset handling (IRQ/NMI line sampling, the one-instruction `I`-flag delay,
+edge-triggered NMI, the seven-cycle interrupt/reset sequences), and is at the
 per-cycle bus-order boundary. Seven functional workspace crates exist. The
 reviewed QMT `nestest` pair passes 8,991 rows / 8,990
 transitions through the mapper-0 CPU bus, including the exact 76 stable
@@ -18,6 +20,34 @@ PPU/APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
+
+Interrupt and reset increment (instruction-stepped model, fully additive):
+
+- Added edge-triggered NMI and level-triggered IRQ line inputs
+  (`set_nmi_line`/`set_irq_line`), a `pending_interrupt` poll with NMI-over-IRQ
+  priority and IRQ masked by the `I` flag, and a `service_interrupt` that runs
+  the seven-cycle hardware-interrupt frame (return address and status pushed with
+  the `B` flag clear, `I` set, NMI `$FFFA`/IRQ `$FFFE` vector). `BRK` now shares
+  the frame helper with the `B` flag set.
+- Modeled the one-instruction `I`-flag delay: `CLI`, `SEI`, and `PLP` are polled
+  with their pre-instruction flag value; `RTI` and all others use the
+  post-instruction value.
+- Added a warm `reset` sequence: `SP` decremented by three without writing, `I`
+  set, latched NMI dropped, `PC` loaded from `$FFFC`, and `A`/`X`/`Y`/other flags
+  preserved. Interrupt entry and reset reserve their seven cycles before any bus
+  access, so an exhausted counter changes nothing.
+- Added 14 focused tests: reset register preservation, IRQ masking and deassert,
+  IRQ/NMI frame bytes and vectors, NMI edge re-trigger, NMI-over-IRQ priority,
+  the CLI/SEI/PLP delay versus RTI-immediate recognition, BRK's `B` bit, and
+  failure-atomic interrupt/reset at the cycle ceiling.
+- Left explicitly deferred and unclaimed: per-cycle interrupt/reset bus order,
+  dummy reads/writes, RMW double-writes, sub-instruction poll timing, and NMI
+  hijacking of an in-progress BRK/IRQ sequence.
+- Adversarial review across four independent lenses (I-flag delay, edge/level
+  detection, frame/vector/flags, regression/integration) found no real P0-P2
+  defect; the SEI let-through test was strengthened to follow the driver contract.
+
+Earlier this session (foundation, unchanged by the interrupt work):
 
 - Obtained the operator-authorized pair from the author-hosted source into the
   ignored `external-fixtures/` boundary and verified both reviewed sizes and
@@ -154,8 +184,12 @@ nightly-2026-07-12 on 2026-07-13:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 76 passed, 0 failed.
-- Release tests: 76 passed, 0 failed; doc tests passed.
+- Debug tests: 90 passed, 0 failed (14 new interrupt/reset tests).
+- Release tests: 90 passed, 0 failed; doc tests passed.
+- After the interrupt work, the strict `nestest-v1` full trace was re-run and is
+  byte-for-byte unregressed: 8,991 rows / 8,990 transitions, final `PC=C66E`,
+  `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`, 26,554 cycles. Interrupt handling is
+  additive; the instruction path is unchanged.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash
@@ -278,10 +312,13 @@ Ubuntu 24.04.
 
 ## Next action
 
-Add focused IRQ, NMI, reset, and bus-access-order tests, then implement missing
-interrupt sampling and per-cycle behavior. Do not start scheduler/PPU work
-until that gate passes. After the mapper-0 whole-machine video/audio gate,
-implement and verify MMC1 for the supplied operator target.
+Architectural interrupt sampling and reset are implemented. Next, convert the
+CPU from instruction-stepped to per-cycle bus behavior: exact per-cycle access
+order, dummy reads/writes, RMW double-writes, sub-instruction interrupt-poll
+timing, and NMI hijacking of an in-progress BRK/IRQ sequence, validated against
+the SingleStepTests per-cycle bus traces. Do not start scheduler/PPU work until
+that gate passes. After the mapper-0 whole-machine video/audio gate, implement
+and verify MMC1 for the supplied operator target.
 
 ## Open decisions
 
