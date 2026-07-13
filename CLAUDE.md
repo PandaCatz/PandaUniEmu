@@ -97,21 +97,21 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Release CLI: final tick `30`; video `3` frames, hash `2d1f1e3d37030229`;
   audio `7` packets / `28` frames, hash `b2bdf29fe8dd6d45`; ordered event hash
   `2343096cdf497a5e`.
-- GitHub Actions run `29249241102` for the published handoff commit passed on
-  Windows and Linux. The CPU/fuzz checkpoint is not published yet.
+- CPU/fuzz checkpoint `a01aac5e9c287770197ebb8b79f0095b87ebbabb`
+  is published. GitHub Actions run `29252492924` passed all four jobs: stable
+  tests on Windows/Linux and seeded ASan fuzz smoke on Windows/Linux.
 
 ## Next tasks, in order
 
-1. Complete the fresh adversarial CPU review and publish the green checkpoint.
-2. Implement the minimal mapper-0 CPU bus and a defensive reference-log parser
+1. Implement the minimal mapper-0 CPU bus and a defensive reference-log parser
    plus trace runner.
-3. Run an operator-supplied `nestest` ROM/log without committing either; fix
+2. Run an operator-supplied `nestest` ROM/log without committing either; fix
    every architectural-state or cycle divergence.
-4. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the
+3. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the
    missing interrupt sampling and per-cycle behavior.
-5. Add the first master-clock scheduler and dot-timed PPU oracle.
-6. Reach a deterministic headless NROM video/audio checkpoint.
-7. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
+4. Add the first master-clock scheduler and dot-timed PPU oracle.
+5. Reach a deterministic headless NROM video/audio checkpoint.
+6. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
 
 ## Decisions still open
 

@@ -23,8 +23,9 @@ playable emulation. No original ROM, firmware, or test-ROM bytes are committed.
 - Corrected the roadmap so the headless gate precedes the frontend and the first
   playable compatibility target is mapper-0/NROM before broader mapper work.
 
-These local changes are not a published milestone until the full gates,
-independent diff review, publisher dry run, GitHub commit, and CI pass complete.
+This checkpoint was published as commit
+`a01aac5e9c287770197ebb8b79f0095b87ebbabb` after the full gates, two independent
+reviews, and a deletion-safe publisher dry run passed.
 
 ## Key decisions
 
@@ -33,8 +34,8 @@ independent diff review, publisher dry run, GitHub commit, and CI pass complete.
 - The current CPU is deliberately instruction-trace oriented. It does not yet
   claim bus-cycle ordering, IRQ/NMI sampling, DMA interaction, unofficial
   opcodes, or `nestest` equivalence.
-- External test ROMs and logs remain operator-supplied and uncommitted until
-  their redistribution terms are reviewed.
+- External test ROMs and logs remain operator-supplied and uncommitted even when
+  redistribution terms would permit publication; store only hashes and results.
 - Direct `winit`/`wgpu`/`cpal` adapters remain the frontend direction after the
   deterministic headless NROM gate.
 
@@ -56,17 +57,15 @@ Verified locally on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   audio frames, video hash `2d1f1e3d37030229`, audio hash
   `b2bdf29fe8dd6d45`, and event hash `2343096cdf497a5e`.
 
-Published evidence currently stops at handoff commit
-`4515511c154c1e5fe39a45c750bda45a71569ed3`; its Windows/Linux GitHub Actions
-run `29249241102` passed. The CPU/fuzz milestone is still local.
+GitHub Actions run `29252492924` passed all four jobs for checkpoint
+`a01aac5e9c287770197ebb8b79f0095b87ebbabb`: stable format/Clippy/debug/release/
+CLI gates and seeded ASan fuzz smoke on both Windows 2025 and Ubuntu 24.04.
 
 ## Next action
 
-Complete the fresh adversarial CPU review, rerun every local gate, and publish
-the CPU/fuzz checkpoint. Then implement the minimal mapper-0 CPU bus, defensive
-reference-log parser, and trace runner before comparing an operator-supplied
-`nestest` ROM/log. Record only fixture hashes and the first divergence outside
-the repository.
+Implement the minimal mapper-0 CPU bus, defensive reference-log parser, and
+trace runner before comparing an operator-supplied `nestest` ROM/log. Record
+only fixture hashes and the first divergence outside the repository.
 
 ## Open decisions
 
