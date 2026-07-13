@@ -7,8 +7,10 @@ Last updated: 2026-07-13
 The Phase 1 headless foundation is implemented. The Phase 2 NTSC NES vertical
 slice is at the independent CPU-trace boundary. Seven functional workspace
 crates exist. The mapper-0 CPU bus and a generated trace runner now work, but no
-operator-supplied `nestest` pair has been run. There is no PPU/APU, complete NES
-machine, host frontend, or playable emulation.
+operator-supplied `nestest` pair has been run. A pinned MIT single-step sample
+now provides independent instruction-boundary evidence across all 151
+documented encodings. There is no PPU/APU, mapper 1, complete NES machine, host
+frontend, or playable emulation.
 
 ## Implemented this session
 
@@ -43,6 +45,15 @@ machine, host frontend, or playable emulation.
 - Added RustCrypto `sha2` 0.11.0 to `retro-cli` only, with default features
   disabled. Its MIT/Apache-2.0 licensing, Rust 1.85 MSRV, old inapplicable
   advisory, resolved dependency tree, and lockfile were reviewed.
+- Curated 190 data-only RP2A03 vectors from MIT-licensed
+  `SingleStepTests/65x02` commit
+  `2f6980a2d95757486c7bee24355c360e40e2a224`. The bounded reproducible curator
+  selects expected cycle profiles without calculating expected results, and
+  `NOTICE` retains the upstream license.
+- Added a public-surface test covering all 151 documented opcode encodings, all
+  23 page-penalty encodings with crossed/non-crossed profiles, and all eight
+  branches with 2/3/4-cycle profiles. It checks final architectural state,
+  declared RAM, and instruction cycles, but not bus access order.
 
 The mapper-bus/reference-runner checkpoint passed fresh adversarial review, a
 deletion-safe 39-file publisher preview, and the Windows/Linux CI matrix. The
@@ -53,6 +64,15 @@ passed local verification, fresh adversarial review with no actionable P0-P2
 findings, a deletion-safe 43-file publisher preview, and the Windows/Linux
 GitHub Actions matrix.
 
+The single-step-oracle changes pass local verification and a clean regeneration
+produced the exact checked-in SHA-256
+`5e8341f1b5b17a3f08835bf81674b6fe01b682d9500a4204540de462a09eeddb`.
+Fresh adversarial review found one P1: fractional JSON numbers could be rounded
+during integer conversion. The curator now accepts only CLR integer types; a
+same-size hostile chunk proved rejection, and re-review found no remaining
+P0-P2 issues. A deletion-safe 46-file publisher preview passed and excluded all
+local operator fixtures; the GitHub checkpoint and CI remain pending.
+
 ## Verification performed
 
 Verified locally on Windows x86-64 with Rust/Cargo 1.96.0 and
@@ -61,8 +81,8 @@ nightly-2026-07-12 on 2026-07-13:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 65 passed, 0 failed.
-- Release tests: 65 passed, 0 failed; doc tests passed.
+- Debug tests: 66 passed, 0 failed.
+- Release tests: 66 passed, 0 failed; doc tests passed.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash
@@ -73,6 +93,14 @@ nightly-2026-07-12 on 2026-07-13:
   for an unsupported opcode on a one-row final sentinel, without printing paths.
 - The release `nestest-v1` command rejected a same-size generated ROM with status
   `5` before parsing and did not expose the operator paths or hostile log marker.
+- All 190 pinned independent single-step vectors passed. A clean curation from
+  the pinned upstream commit was byte-identical, and a short cached chunk was
+  rejected before JSON parsing. A same-size chunk containing fractional numeric
+  state was rejected rather than rounded.
+- An operator-owned mapper-1 image was moved under ignored local fixtures. Its
+  iNES header was inspected as 16 PRG banks, CHR RAM, battery-backed mapper 1;
+  the release NROM-only trace command returned exit `3` at its bounded input
+  layer and did not attempt emulation.
 
 Mapper-0 bus/reference-runner checkpoint
 `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
@@ -105,6 +133,11 @@ Ubuntu 24.04. No external fixture was found or run.
 - The runner uses the first reference row's raw cycle convention and never
   renormalizes later rows.
 - The current milestone remains instruction-oriented, not bus-cycle accurate.
+- The pinned MIT single-step sample is independent architectural evidence, not
+  a replacement for the full mapper-0 `nestest` trace.
+- The supplied mapper-1 image is a future MMC1 compatibility target. Accepting
+  it before serial banking, CHR/nametable routing, PPU/APU, and mapper tests
+  would be a false compatibility claim.
 
 ## Next action
 
@@ -112,13 +145,14 @@ Obtain an operator-supplied pair matching a reviewed identity in
 `compatibility/NESTEST_PROVENANCE.md`, record local hashes under the ignored
 `external-fixtures/` directory, and run `nestest-v1`. Fix every divergence before
 moving to interrupt or PPU work. The strict accepted-fixture path cannot be
-verified until those operator files exist; generated tests are not independent proof.
+verified until those operator files exist. After the mapper-0 whole-machine
+gate, implement and verify MMC1 for the supplied operator target.
 
 ## Open decisions
 
 1. Initial source license before accepting outside contributions.
 2. Whether Linux is a release target or a CI-only target for the first build.
-3. Exact independently licensed external CPU test suite and acquisition source.
+3. Additional independently licensed interrupt/bus suite and acquisition source.
 4. Final product name.
 
 ## Environment notes

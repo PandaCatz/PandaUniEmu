@@ -40,7 +40,8 @@ The workspace contains seven functional crates:
   operator-path NROM/reference-trace commands. `nestest-v1` enforces the exact
   reviewed fixture size/hash matrix before parsing.
 - `cpu-6502`: trace-first documented 2A03 instruction layer with explicit
-  addressing, flags, cycle totals, stack/control flow, and decode metadata.
+  addressing, flags, cycle totals, stack/control flow, decode metadata, and a
+  pinned MIT single-step oracle sample.
 
 The fuzz project calls both format parsers with arbitrary bytes. The checked-in
 launcher generates redistribution-safe seeds and handles the Windows
@@ -61,8 +62,13 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 - Implemented a deterministic synthetic run used by tests and the CLI.
 - Added parser fuzzing, an NES acceptance matrix, and external-test provenance.
 - Implemented decode entries for the canonical 151 documented opcode encodings
-  and selected generated semantic tests in a trace-first CPU layer. The metadata
-  and full behavior still need an independent `nestest` comparison.
+  and selected generated semantic tests in a trace-first CPU layer.
+- Curated 190 data-only vectors from the pinned MIT `SingleStepTests/65x02`
+  RP2A03 suite. They independently sample final architectural state, declared
+  RAM, and cycle counts for all 151 encodings, all 23 paired page-penalty
+  profiles, and all eight branch 2/3/4-cycle profiles. The reproducible curator
+  validates bounded upstream data and the upstream license is retained in
+  `NOTICE`.
 - Implemented an NROM-128/NROM-256 CPU bus, trainer/PRG-memory validation,
   side-effect-free diagnostic reads, and explicit faults for missing devices.
 - Added an isolated bounded `nestest`-style log parser, generated end-to-end
@@ -114,8 +120,8 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 65 passed, 0 failed.
-- Release tests: 65 passed, 0 failed; doc tests passed.
+- Debug tests: 66 passed, 0 failed.
+- Release tests: 66 passed, 0 failed; doc tests passed.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -138,6 +144,18 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   and a deletion-safe 43-file publisher preview. Its accepted-fixture path
   remains unrun because committing or downloading the unlicensed fixtures is
   prohibited.
+- The local single-step-oracle checkpoint passes all 190 pinned vectors and a
+  clean regeneration reproduced generated-file SHA-256
+  `5e8341f1b5b17a3f08835bf81674b6fe01b682d9500a4204540de462a09eeddb`.
+  Fresh adversarial review found one P1 fractional-number validation defect;
+  integer-type enforcement fixed it, a same-size hostile chunk proved rejection,
+  and re-review found no remaining P0-P2 issues. A deletion-safe 46-file
+  publisher preview subsequently passed and excluded all local operator
+  fixtures; the GitHub checkpoint and CI remain pending.
+- An operator-owned mapper-1 image was identified and retained only under the
+  ignored `external-fixtures/` directory. Its header is valid, but the current
+  NROM-only trace boundary correctly rejected it before emulation. MMC1 remains
+  a later compatibility target, not a working feature.
 
 ## Next tasks, in order
 
@@ -150,19 +168,22 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
    missing interrupt sampling and per-cycle behavior.
 4. Add the first master-clock scheduler and dot-timed PPU oracle.
 5. Reach a deterministic headless NROM video/audio checkpoint.
-6. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
+6. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
+   mirroring, reset, and PRG RAM, for the supplied mapper-1 target.
+7. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
 
 ## Decisions still open
 
 - Project source license before accepting outside contributions.
 - Whether Linux is a release target or a CI-only target initially.
-- Exact independently licensed external test suites and acquisition process.
+- Additional independently licensed interrupt/bus suites and acquisition process.
 - Final product name.
 
 ## Honest limitations
 
 The synthetic core proves only the shared contract/headless capture path. The
-CPU and mapper-0 bus currently prove generated instruction-level behavior only;
-they have no independent oracle result and are not bus-cycle accurate. PPU/APU/
-I/O are intentionally faulted rather than simulated. This is not a playable NES
-emulator.
+CPU now has independent instruction-boundary samples across all documented
+encodings, but the sample is not exhaustive, the mapper-0 full trace has not
+run, and the CPU is not bus-cycle accurate. PPU/APU/I/O are intentionally
+faulted rather than simulated. Mapper 1 is not implemented. This is not a
+playable NES emulator.

@@ -11,12 +11,18 @@ metadata, hashes, and sanitized results.
 |---|---|---|---|
 | Generated iNES/NES 2.0 byte vectors | Committed as Rust test construction code | Original project code; contains no Nintendo data | Parser validity, truncation, size, dirty-header, and mapper-boundary tests |
 | Generated reference-log rows | Committed as Rust string construction code | Original project data; not copied from an external log | Parser boundaries and generated mapper-0 trace comparison |
+| Curated RP2A03 single-step vectors | 190 data-only Rust vectors committed with `NOTICE`; reproducible curator is `tools/curate-nes6502-vectors.ps1` | MIT-licensed `SingleStepTests/65x02`, pinned at commit `2f6980a2d95757486c7bee24355c360e40e2a224`; generated-file SHA-256 `5e8341f1b5b17a3f08835bf81674b6fe01b682d9500a4204540de462a09eeddb` | Independent architectural state, declared RAM, and cycle-count samples for all 151 documented encodings; paired page-penalty and branch profiles; no bus-order claim |
 | `cargo-fuzz` generated corpus/artifacts | Ignored | Generated from arbitrary bytes; minimize and inspect before promoting a regression case into source | Both format parsers; 10,000-run Windows ASan smoke per target passed 2026-07-13 |
 | Synthetic core output | Committed as algorithms and numeric hashes | Original project code | Deterministic scheduling, reset, split-run, input ordering, video/audio/event hashes |
 | `nestest.nes` | Never commit | Kevin Horton V1.00 identity is pinned in `compatibility/NESTEST_PROVENANCE.md`; no explicit redistribution license was found; operator supplies a lawful local copy | Strict CLI enforces exact byte count/SHA-256 before parsing; external comparison not run |
 | Matching `nestest` reference log | Never commit | QMT CRLF and archival LF size/hash identities are pinned; neither is redistributed because no explicit license was found | Strict CLI accepts only the two reviewed raw encodings and requires 8,991/8,990 on success; external comparison not run |
 | Blargg CPU/interrupt test ROMs | Local-only until each archive's terms are reviewed | Record upstream URL/revision, archive hash, individual ROM hash, and execution result | Planned timing, interrupt, reset, and unofficial-opcode gates |
 | Operator-owned commercial images | Never commit | Use only from the operator's own dumps; record opaque local identifier/hash and observed result | Later compatibility testing only |
+
+The curator downloads only the first 65,536 bytes of each required pinned
+upstream opcode file, accepts complete brace-balanced records, selects fixed
+cycle profiles without calculating expected results, and emits data-only Rust.
+A clean regeneration on 2026-07-13 produced the exact checked-in SHA-256 above.
 
 ## Run-record requirements
 

@@ -822,7 +822,11 @@ const fn page_crossed(first: u16, second: u16) -> bool {
 }
 
 #[cfg(test)]
+mod singlestep_vectors;
+
+#[cfg(test)]
 mod tests {
+    use super::singlestep_vectors::{Snapshot, UPSTREAM_COMMIT, VECTORS, Vector};
     use super::*;
 
     struct Ram {
@@ -852,6 +856,95 @@ mod tests {
         Cpu::new(state)
     }
 
+    struct OracleRam {
+        data: Vec<u8>,
+        known: Vec<bool>,
+        vector_name: &'static str,
+    }
+
+    impl OracleRam {
+        fn from_vector(vector: &Vector) -> Self {
+            let mut ram = Self {
+                data: vec![0; 65_536],
+                known: vec![false; 65_536],
+                vector_name: vector.name,
+            };
+            for &(address, value) in vector.initial_ram {
+                let index = usize::from(address);
+                if ram.known[index] {
+                    assert_eq!(
+                        ram.data[index], value,
+                        "vector {} has conflicting initial RAM at ${address:04X}",
+                        vector.name
+                    );
+                }
+                ram.data[index] = value;
+                ram.known[index] = true;
+            }
+            for &(address, _) in vector.final_ram {
+                ram.known[usize::from(address)] = true;
+            }
+            ram
+        }
+
+        fn assert_final(&self, vector: &Vector) {
+            for &(address, expected) in vector.final_ram {
+                assert_eq!(
+                    self.data[usize::from(address)],
+                    expected,
+                    "vector {} final RAM mismatch at ${address:04X}",
+                    vector.name
+                );
+            }
+        }
+    }
+
+    impl Bus for OracleRam {
+        fn read(&mut self, address: u16) -> u8 {
+            assert!(
+                self.known[usize::from(address)],
+                "vector {} read undeclared RAM at ${address:04X}",
+                self.vector_name
+            );
+            self.data[usize::from(address)]
+        }
+
+        fn write(&mut self, address: u16, value: u8) {
+            assert!(
+                self.known[usize::from(address)],
+                "vector {} wrote undeclared RAM at ${address:04X}",
+                self.vector_name
+            );
+            self.data[usize::from(address)] = value;
+        }
+    }
+
+    const fn state_from_snapshot(snapshot: Snapshot, total_cycles: u64) -> CpuState {
+        CpuState {
+            pc: snapshot.pc,
+            sp: snapshot.sp,
+            a: snapshot.a,
+            x: snapshot.x,
+            y: snapshot.y,
+            status: snapshot.status,
+            total_cycles,
+        }
+    }
+
+    const fn is_branch(mnemonic: Mnemonic) -> bool {
+        matches!(
+            mnemonic,
+            Mnemonic::Bcc
+                | Mnemonic::Bcs
+                | Mnemonic::Beq
+                | Mnemonic::Bmi
+                | Mnemonic::Bne
+                | Mnemonic::Bpl
+                | Mnemonic::Bvc
+                | Mnemonic::Bvs
+        )
+    }
+
     #[test]
     fn decoder_contains_all_151_documented_opcode_encodings() {
         assert_eq!(
@@ -874,6 +967,81 @@ mod tests {
             let trace = cpu.step(&mut ram).expect("documented opcode executes");
             assert_eq!(trace.instruction, instruction, "opcode ${opcode:02X}");
             assert!(trace.cycles >= 2, "opcode ${opcode:02X}");
+        }
+    }
+
+    #[test]
+    fn pinned_mit_single_step_vectors_match_all_documented_encodings() {
+        assert_eq!(UPSTREAM_COMMIT, "2f6980a2d95757486c7bee24355c360e40e2a224");
+        assert_eq!(VECTORS.len(), 190);
+
+        let mut covered = [false; 256];
+        let mut cycles_seen = [[false; 8]; 256];
+        for vector in VECTORS {
+            let instruction = decode(vector.opcode).unwrap_or_else(|| {
+                panic!(
+                    "MIT vector {} uses unsupported opcode ${:02X}",
+                    vector.name, vector.opcode
+                )
+            });
+            covered[usize::from(vector.opcode)] = true;
+            cycles_seen[usize::from(vector.opcode)][usize::from(vector.cycles)] = true;
+
+            let initial = state_from_snapshot(vector.initial, 0);
+            let mut cpu = Cpu::new(initial);
+            assert_eq!(
+                cpu.state(),
+                initial,
+                "vector {} initial status is not canonical",
+                vector.name
+            );
+            let mut ram = OracleRam::from_vector(vector);
+            let trace = cpu
+                .step(&mut ram)
+                .unwrap_or_else(|error| panic!("vector {} failed: {error}", vector.name));
+            let expected = state_from_snapshot(vector.final_state, u64::from(vector.cycles));
+
+            assert_eq!(trace.before, initial, "vector {} before state", vector.name);
+            assert_eq!(trace.after, expected, "vector {} after state", vector.name);
+            assert_eq!(trace.opcode, vector.opcode, "vector {} opcode", vector.name);
+            assert_eq!(
+                trace.cycles, vector.cycles,
+                "vector {} cycle count",
+                vector.name
+            );
+            assert_eq!(cpu.state(), expected, "vector {} CPU state", vector.name);
+            ram.assert_final(vector);
+
+            if is_branch(instruction.mnemonic) {
+                assert_eq!(instruction.base_cycles, 2);
+            }
+        }
+
+        assert_eq!(covered.iter().filter(|covered| **covered).count(), 151);
+        for opcode in 0_u8..=u8::MAX {
+            assert_eq!(
+                decode(opcode).is_some(),
+                covered[usize::from(opcode)],
+                "documented opcode-set mismatch at ${opcode:02X}"
+            );
+            let Some(instruction) = decode(opcode) else {
+                continue;
+            };
+            if is_branch(instruction.mnemonic) {
+                for cycles in [2_usize, 3, 4] {
+                    assert!(
+                        cycles_seen[usize::from(opcode)][cycles],
+                        "branch ${opcode:02X} lacks a {cycles}-cycle oracle vector"
+                    );
+                }
+            } else if instruction.page_cross_cycle {
+                for cycles in [instruction.base_cycles, instruction.base_cycles + 1] {
+                    assert!(
+                        cycles_seen[usize::from(opcode)][usize::from(cycles)],
+                        "opcode ${opcode:02X} lacks a {cycles}-cycle page profile"
+                    );
+                }
+            }
         }
     }
 

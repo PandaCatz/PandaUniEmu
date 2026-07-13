@@ -6,9 +6,9 @@ have passed unless the evidence column says so.
 
 | Layer | Required evidence | Current status |
 |---|---|---|
-| iNES/NES 2.0 parser | Generated valid/malformed tests, every truncation point, configured size limits, dirty-header rejection, and libFuzzer smoke/soak | Unit/adversarial tests pass; Windows AddressSanitizer smoke completed 10,000 runs through the checked-in launcher; Linux CI smoke pending |
+| iNES/NES 2.0 parser | Generated valid/malformed tests, every truncation point, configured size limits, dirty-header rejection, and libFuzzer smoke/soak | Unit/adversarial tests pass; Windows and Linux AddressSanitizer smoke completed 10,000 runs through the checked-in launcher |
 | Shared scheduler contract | Split and single runs match; reset repeats exact output; future input wins same-timestamp ordering; combined event hash is stable | Passed by synthetic-core tests |
-| Documented 2A03 opcodes | Independently checked opcode metadata plus exhaustive semantics/flags/addressing/cycle cases | The canonical set of 151 encodings decodes and selected generated semantic tests pass; independent metadata and instruction trace are absent |
+| Documented 2A03 opcodes | Independently checked opcode set plus broad semantics/flags/addressing/cycle cases | A reproducible 190-vector sample from the pinned MIT `SingleStepTests/65x02` RP2A03 suite passes all 151 documented encodings, all 23 paired page-penalty profiles, and all eight branch 2/3/4-cycle profiles; the sample is not exhaustive and bus order is not checked |
 | Independent CPU trace | Strict `nestest-v1` output proves the reviewed operator pair matched 8,991 rows / 8,990 transitions for PC, A, X, Y, P, SP, and cumulative cycles through the final end-state row | Bounded parser, bus, generated comparison, SHA-256 identity enforcement, and operator-path CLI pass generated/adversarial tests; no operator pair has been run |
 | IRQ/NMI/reset | Dedicated external suites plus focused generated tests cover stack bytes, vectors, B/U bits, masking, and edge timing | Generated instruction-level tests planned; external suite absent |
 | Unofficial opcodes | Explicit supported-encoding table and independent suite | Out of current milestone scope |
@@ -17,12 +17,13 @@ have passed unless the evidence column says so.
 
 ## CPU milestone boundary
 
-The first CPU crate is instruction-trace oriented. Selected generated tests
-exercise architectural state, memory effects, instruction cycle totals,
-page-crossing penalties, stack behavior, and the NMOS indirect-JMP wrap quirk.
-The decoding table and full behavior have not yet been independently verified,
-so accuracy is not claimed. Dummy reads/writes, interrupt sampling races, DMA
-stalls, and exact bus access order remain required before PPU/APU integration.
+The first CPU crate is instruction-trace oriented. Generated tests and a pinned
+independent 190-vector sample exercise architectural state, declared memory
+effects, instruction cycle totals, page-crossing penalties, stack behavior, and
+the NMOS indirect-JMP wrap quirk across all documented encodings. The sample is
+not exhaustive. Dummy reads/writes, interrupt sampling races, DMA stalls, the
+full mapper trace, and exact bus access order remain required before PPU/APU
+integration.
 
 ## Fuzz commands
 
