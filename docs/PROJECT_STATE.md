@@ -49,9 +49,9 @@ deletion-safe 39-file publisher preview, and the Windows/Linux CI matrix. The
 new provenance/operator-CLI changes passed fresh adversarial review after all
 three P2 findings were fixed. The deletion-safe 42-file publisher preview and
 the Windows/Linux GitHub Actions matrix also passed. The strict identity changes
-are locally verified, passed fresh adversarial review with no actionable P0-P2
-findings, and passed a deletion-safe 43-file publisher preview; the GitHub
-checkpoint and CI remain pending.
+passed local verification, fresh adversarial review with no actionable P0-P2
+findings, a deletion-safe 43-file publisher preview, and the Windows/Linux
+GitHub Actions matrix.
 
 ## Verification performed
 
@@ -83,6 +83,11 @@ Provenance/operator-CLI checkpoint
 `cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f` is published. GitHub Actions run
 `29257679328` passed the same four-job stable/fuzz matrix on Windows 2025 and
 Ubuntu 24.04.
+
+Strict fixture-identity checkpoint
+`8bfdec36fc866a2f1c3b37d88e304a7e7ef96e10` is published. GitHub Actions run
+`29259546369` passed the same four-job stable/fuzz matrix on Windows 2025 and
+Ubuntu 24.04. No external fixture was found or run.
 
 ## Key decisions
 

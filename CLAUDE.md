@@ -131,9 +131,11 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   `cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f` is published. GitHub Actions run
   `29257679328` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu
   24.04. No external fixture was found or run.
-- The strict identity-enforcement milestone is locally verified and passed a
-  fresh adversarial review with no actionable P0-P2 findings and a deletion-safe
-  43-file publisher preview, but is not yet published. Its accepted-fixture path
+- Strict fixture-identity checkpoint
+  `8bfdec36fc866a2f1c3b37d88e304a7e7ef96e10` is published. GitHub Actions run
+  `29259546369` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu
+  24.04. It passed fresh adversarial review with no actionable P0-P2 findings
+  and a deletion-safe 43-file publisher preview. Its accepted-fixture path
   remains unrun because committing or downloading the unlicensed fixtures is
   prohibited.
 
