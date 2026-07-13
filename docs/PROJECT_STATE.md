@@ -24,6 +24,8 @@ firmware, or test-ROM bytes have been added.
   and a real headless CLI.
 - Added a Windows/Linux CI workflow with format, Clippy, debug test, and release
   test gates.
+- Published the foundation to `PandaCatz/PandaUniEmu` at commit
+  `b7c3182a8672db0bed814951cd9d959fa8eb8f7a`.
 
 ## Key decisions
 
@@ -56,12 +58,14 @@ firmware, or test-ROM bytes have been added.
 - Release CLI produced tick 30, three video frames, seven audio packets / 28
   audio frames, video hash `2d1f1e3d37030229`, and audio hash
   `b2bdf29fe8dd6d45`; unified ordered event hash `2343096cdf497a5e`.
+- GitHub Actions run `29249023446` completed successfully for the published
+  foundation on the configured Windows/Linux matrix.
 
 ## Next action
 
-Publish the verified foundation to `PandaCatz/PandaUniEmu`, add parser fuzzing
-and the NES oracle provenance/acceptance matrix, then begin the trace-first
-`cpu-6502` crate. Do not add the host frontend before the headless CPU gate.
+Add parser fuzzing and the NES oracle provenance/acceptance matrix, then begin
+the trace-first `cpu-6502` crate. Do not add the host frontend before the
+headless CPU gate.
 
 ## Open decisions
 
@@ -76,6 +80,7 @@ and the NES oracle provenance/acceptance matrix, then begin the trace-first
 
 ## Known environment issue
 
-`git` is not installed/on `PATH`. GitHub CLI is authenticated and the target
-public repository `PandaCatz/PandaUniEmu` is empty with push/admin permission.
-Publishing may use the GitHub Git Data API until Git is installed.
+`git` is not installed/on `PATH`. GitHub CLI is authenticated and the public
+repository `PandaCatz/PandaUniEmu` is publishing successfully through the
+allowlisted Git Data API script. Continue using dry runs before each checkpoint
+until Git is installed.

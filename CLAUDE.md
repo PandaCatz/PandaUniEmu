@@ -49,6 +49,8 @@ any GBA/Genesis/SNES code.
   deadline-based core API.
 - Implemented defensive iNES/NES 2.0 parsing with no runtime/frontend dependency.
 - Implemented a deterministic synthetic run used by tests and the CLI.
+- Published the verified foundation to `PandaCatz/PandaUniEmu` as commit
+  `b7c3182a8672db0bed814951cd9d959fa8eb8f7a`.
 
 ## Required commands
 
@@ -83,17 +85,18 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   - video: `3` frames, hash `2d1f1e3d37030229`
   - audio: `7` packets / `28` frames, hash `b2bdf29fe8dd6d45`
   - ordered event stream hash: `2343096cdf497a5e`
+- GitHub Actions run `29249023446` for the foundation commit completed
+  successfully on the Windows/Linux matrix.
 
 ## Next tasks, in order
 
-1. Publish this verified foundation to `PandaCatz/PandaUniEmu`.
-2. Add a parser fuzz target after selecting/installing the fuzzing toolchain.
-3. Add an acceptance matrix and legal provenance record for external NES tests.
-4. Implement `cpu-6502` with a trace-first bus interface and generated unit tests.
-5. Run the operator-supplied `nestest` oracle without committing its ROM/log.
-6. Design the active cartridge/mapper contract, then add mapper 0.
-7. Add the first master-clock scheduler and PPU timing oracle.
-8. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
+1. Add a parser fuzz target after selecting/installing the fuzzing toolchain.
+2. Add an acceptance matrix and legal provenance record for external NES tests.
+3. Implement `cpu-6502` with a trace-first bus interface and generated unit tests.
+4. Run the operator-supplied `nestest` oracle without committing its ROM/log.
+5. Design the active cartridge/mapper contract, then add mapper 0.
+6. Add the first master-clock scheduler and PPU timing oracle.
+7. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
 
 ## Decisions still open
 
