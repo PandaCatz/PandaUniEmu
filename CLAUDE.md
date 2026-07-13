@@ -107,6 +107,8 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   `e5f3a4d73738e908b0c2d2fce8c372182a9141fc`.
 - Published the clean-room NROM mapper-integration checkpoint as commit
   `53c65b20e9d572bfe64bdaf0613481dba87d21a3`.
+- Published the trainer-backed NROM and `GPL-2.0-or-later` checkpoint as commit
+  `93c696b005f4cddcaca932ba210e95aebeaba44a`.
 
 ## Required commands
 
@@ -194,6 +196,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   46 transitions and 152 cycles; the release CLI exercised the trainer case
   through real files. Format, warnings-denied clippy, 68 debug tests, 68 release
   tests, doc tests, and both 10,000-run Windows ASan parser fuzz gates passed.
+- Trainer/license checkpoint `93c696b005f4cddcaca932ba210e95aebeaba44a`
+  is published. GitHub Actions run `29267749389` passed all four stable/fuzz
+  jobs on Windows 2025 and Ubuntu 24.04, including the release app and 10,000
+  executions of each parser fuzz target.
 - An operator-owned mapper-1 image was identified and retained only under the
   ignored `external-fixtures/` directory. Its header is valid, but the current
   NROM-only trace boundary correctly rejected it before emulation. MMC1 remains

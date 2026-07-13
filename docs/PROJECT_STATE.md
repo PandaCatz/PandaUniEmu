@@ -171,6 +171,12 @@ Clean-room NROM mapper-integration checkpoint
 including format, warnings-denied lint, debug/release tests, the release app,
 and 10,000 executions of each parser fuzz target.
 
+Trainer-backed NROM and license checkpoint
+`93c696b005f4cddcaca932ba210e95aebeaba44a` is published. GitHub Actions run
+`29267749389` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu 24.04,
+including format, warnings-denied lint, debug/release tests, the release app,
+and 10,000 executions of each parser fuzz target.
+
 ## Key decisions
 
 - External ROMs and reference logs always remain operator-supplied and
