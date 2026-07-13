@@ -68,6 +68,8 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 - Published the verified foundation as commit
   `b7c3182a8672db0bed814951cd9d959fa8eb8f7a` and its handoff update as commit
   `4515511c154c1e5fe39a45c750bda45a71569ed3`.
+- Published the mapper-0 bus/reference-runner checkpoint as commit
+  `505a73c02d69f309cad37d7c85e7520d7e5ab6b6`.
 
 ## Required commands
 
@@ -105,11 +107,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Release CLI: final tick `30`; video `3` frames, hash `2d1f1e3d37030229`;
   audio `7` packets / `28` frames, hash `b2bdf29fe8dd6d45`; ordered event hash
   `2343096cdf497a5e`.
-- CPU/fuzz checkpoint `a01aac5e9c287770197ebb8b79f0095b87ebbabb`
-  is published. GitHub Actions run `29252492924` passed all four jobs: stable
-  tests on Windows/Linux and seeded ASan fuzz smoke on Windows/Linux.
-- The mapper-0 bus/reference-runner milestone is locally verified but not yet
-  published; do not attribute it to the preceding checkpoint.
+- Mapper-0 bus/reference-runner checkpoint
+  `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
+  `29254844214` passed all four jobs: stable tests and both 10,000-run parser
+  ASan fuzz targets on Windows 2025 and Ubuntu 24.04.
 
 ## Next tasks, in order
 
