@@ -92,6 +92,8 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   `505a73c02d69f309cad37d7c85e7520d7e5ab6b6`.
 - Published the provenance/operator-CLI checkpoint as commit
   `cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f`.
+- Published the independent single-step-oracle checkpoint as commit
+  `e5f3a4d73738e908b0c2d2fce8c372182a9141fc`.
 
 ## Required commands
 
@@ -144,14 +146,17 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   and a deletion-safe 43-file publisher preview. Its accepted-fixture path
   remains unrun because committing or downloading the unlicensed fixtures is
   prohibited.
-- The local single-step-oracle checkpoint passes all 190 pinned vectors and a
+- Independent single-step-oracle checkpoint
+  `e5f3a4d73738e908b0c2d2fce8c372182a9141fc` is published. It passes all 190
+  pinned vectors and a
   clean regeneration reproduced generated-file SHA-256
   `5e8341f1b5b17a3f08835bf81674b6fe01b682d9500a4204540de462a09eeddb`.
   Fresh adversarial review found one P1 fractional-number validation defect;
   integer-type enforcement fixed it, a same-size hostile chunk proved rejection,
   and re-review found no remaining P0-P2 issues. A deletion-safe 46-file
   publisher preview subsequently passed and excluded all local operator
-  fixtures; the GitHub checkpoint and CI remain pending.
+  fixtures. GitHub Actions run `29262489825` passed all four stable/fuzz jobs on
+  Windows 2025 and Ubuntu 24.04.
 - An operator-owned mapper-1 image was identified and retained only under the
   ignored `external-fixtures/` directory. Its header is valid, but the current
   NROM-only trace boundary correctly rejected it before emulation. MMC1 remains

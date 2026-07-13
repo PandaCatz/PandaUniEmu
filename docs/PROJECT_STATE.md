@@ -71,7 +71,9 @@ Fresh adversarial review found one P1: fractional JSON numbers could be rounded
 during integer conversion. The curator now accepts only CLR integer types; a
 same-size hostile chunk proved rejection, and re-review found no remaining
 P0-P2 issues. A deletion-safe 46-file publisher preview passed and excluded all
-local operator fixtures; the GitHub checkpoint and CI remain pending.
+local operator fixtures. Checkpoint
+`e5f3a4d73738e908b0c2d2fce8c372182a9141fc` is published, and GitHub Actions run
+`29262489825` passed the Windows/Linux stable and fuzz matrix.
 
 ## Verification performed
 
@@ -116,6 +118,11 @@ Strict fixture-identity checkpoint
 `8bfdec36fc866a2f1c3b37d88e304a7e7ef96e10` is published. GitHub Actions run
 `29259546369` passed the same four-job stable/fuzz matrix on Windows 2025 and
 Ubuntu 24.04. No external fixture was found or run.
+
+Independent single-step-oracle checkpoint
+`e5f3a4d73738e908b0c2d2fce8c372182a9141fc` is published. GitHub Actions run
+`29262489825` passed the same four-job stable/fuzz matrix on Windows 2025 and
+Ubuntu 24.04. No operator ROM or ignored local record was published.
 
 ## Key decisions
 
