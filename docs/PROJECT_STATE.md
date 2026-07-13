@@ -9,7 +9,9 @@ slice is at the independent CPU-trace boundary. Seven functional workspace
 crates exist. The mapper-0 CPU bus and a generated trace runner now work, but no
 operator-supplied `nestest` pair has been run. A pinned MIT single-step sample
 now provides independent instruction-boundary evidence across all 151
-documented encodings. There is no PPU/APU, mapper 1, complete NES machine, host
+documented encodings. Project-owned NROM-128/NROM-256 diagnostics also match
+pinned py65 architectural traces through the mapper and CLI. There is no
+PPU/APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
@@ -42,9 +44,10 @@ frontend, or playable emulation.
   reviewed ROM, and requires 8,991 rows / 8,990 transitions for success.
 - Marked generic `nes-trace` output as `fixture_identity=unchecked`; it remains a
   development harness and cannot be cited as independent acceptance evidence.
-- Added RustCrypto `sha2` 0.11.0 to `retro-cli` only, with default features
-  disabled. Its MIT/Apache-2.0 licensing, Rust 1.85 MSRV, old inapplicable
-  advisory, resolved dependency tree, and lockfile were reviewed.
+- Added RustCrypto `sha2` 0.11.0 to the CLI runtime and testkit development
+  tests, with default features disabled. Its MIT/Apache-2.0 licensing, Rust
+  1.85 MSRV, old inapplicable advisory, resolved dependency tree, and lockfile
+  were reviewed.
 - Curated 190 data-only RP2A03 vectors from MIT-licensed
   `SingleStepTests/65x02` commit
   `2f6980a2d95757486c7bee24355c360e40e2a224`. The bounded reproducible curator
@@ -54,6 +57,13 @@ frontend, or playable emulation.
   23 page-penalty encodings with crossed/non-crossed profiles, and all eight
   branches with 2/3/4-cycle profiles. It checks final architectural state,
   declared RAM, and instruction cycles, but not bus access order.
+- Added `tools/generate-cleanroom-nrom.py`, which builds project-owned NROM-128
+  and NROM-256 diagnostics and traces them with hash-pinned BSD-3-Clause py65
+  commit `3138e1b337734a9b2ac1ea90ee7a453514436221`.
+- Added two 41-row / 40-transition mapper-0 integration cases through the real
+  parser, cartridge, CPU bus, trace runner, and CLI. They exercise CPU RAM
+  mirrors, both NROM PRG layouts, PRG RAM, ignored ROM writes, stack/control
+  flow, branches, and page-cross cycles without importing game or test-ROM data.
 
 The mapper-bus/reference-runner checkpoint passed fresh adversarial review, a
 deletion-safe 39-file publisher preview, and the Windows/Linux CI matrix. The
@@ -83,8 +93,8 @@ nightly-2026-07-12 on 2026-07-13:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 66 passed, 0 failed.
-- Release tests: 66 passed, 0 failed; doc tests passed.
+- Debug tests: 68 passed, 0 failed.
+- Release tests: 68 passed, 0 failed; doc tests passed.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash
@@ -99,6 +109,20 @@ nightly-2026-07-12 on 2026-07-13:
   the pinned upstream commit was byte-identical, and a short cached chunk was
   rejected before JSON parsing. A same-size chunk containing fractional numeric
   state was rejected rather than rounded.
+- The clean-room NROM module regenerated twice to exact SHA-256
+  `64b66bef80d0d07f9da4664cdf9d4ef133e070994f375a2d3071a6bda142e6c5`.
+  Mutating an imported py65 module caused rejection before output. The release
+  CLI matched the NROM-128 case across all 41 rows / 40 transitions and ended at
+  `PC=C102`, `A=5A`, and 128 cycles.
+- Fresh adversarial review found two P1 trust-boundary defects. The generator
+  could execute cached Python bytecode after validating source, and the
+  publisher could follow an allowlisted reparse point outside the workspace.
+  The generator now compiles only hash-validated source bytes into fresh
+  in-memory modules, bypassing filesystem import/cache resolution; an injected
+  external cache produced the exact expected output while a changed source
+  failed before output. The publisher now rejects reparse points, locks each
+  opened file, validates its final in-root path from the same handle, and reads
+  that handle. Focused re-review found no remaining P0-P2 issue in either fix.
 - An operator-owned mapper-1 image was moved under ignored local fixtures. Its
   iNES header was inspected as 16 PRG banks, CHR RAM, battery-backed mapper 1;
   the release NROM-only trace command returned exit `3` at its bounded input
@@ -124,6 +148,10 @@ Independent single-step-oracle checkpoint
 `29262489825` passed the same four-job stable/fuzz matrix on Windows 2025 and
 Ubuntu 24.04. No operator ROM or ignored local record was published.
 
+The clean-room NROM checkpoint passed a deletion-safe 49-file publisher preview.
+No managed remote file was missing, non-allowlisted remote files remain
+preserved, and no operator fixture was included.
+
 ## Key decisions
 
 - External ROMs and reference logs always remain operator-supplied and
@@ -140,6 +168,9 @@ Ubuntu 24.04. No operator ROM or ignored local record was published.
 - The runner uses the first reference row's raw cycle convention and never
   renormalizes later rows.
 - The current milestone remains instruction-oriented, not bus-cycle accurate.
+- The clean-room NROM cases are independent mapper-0 architectural evidence,
+  not evidence for reset timing, interrupts, bus order, PPU/APU behavior, MMC1,
+  gameplay, or the strict `nestest-v1` acceptance gate.
 - The pinned MIT single-step sample is independent architectural evidence, not
   a replacement for the full mapper-0 `nestest` trace.
 - The supplied mapper-1 image is a future MMC1 compatibility target. Accepting

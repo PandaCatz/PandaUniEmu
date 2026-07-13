@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod cleanroom_nrom;
 pub mod nes_trace;
 
 use retro_core::{

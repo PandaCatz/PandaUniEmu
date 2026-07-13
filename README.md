@@ -11,6 +11,11 @@ rejects any unreviewed fixture pair. All 151 documented encodings pass the
 curated instruction-boundary sample, but the full operator-supplied mapper trace
 has not run and playable console emulation does not exist yet.
 
+Project-owned NROM-128 and NROM-256 diagnostics also pass independent pinned
+py65 architectural traces through the parser, mapper bus, runner, and real CLI.
+This is a mapper-0 integration checkpoint, not proof of reset timing, bus-cycle
+order, PPU/APU behavior, MMC1 support, or gameplay.
+
 This project targets a native Rust application with independently testable NES,
 Game Boy Advance, Sega Genesis / Mega Drive, and SNES cores behind one frontend.
 The first shippable target is deliberately smaller: a verified NES vertical slice
@@ -29,6 +34,8 @@ measurable video and audio output.
   sessions.
 - [docs/compatibility/NESTEST_PROVENANCE.md](docs/compatibility/NESTEST_PROVENANCE.md)
   pins the intended external CPU oracle without redistributing it.
+- [docs/compatibility/CLEANROOM_NROM_PROVENANCE.md](docs/compatibility/CLEANROOM_NROM_PROVENANCE.md)
+  records the reproducible project-owned mapper-0 diagnostic evidence.
 - [CLAUDE.md](CLAUDE.md) is the concise agent handoff: completed work, verified
   commands, current limitations, and the exact next-task order.
 

@@ -101,6 +101,7 @@ dependencies = [
  "format-ines",
  "format-nestest-log",
  "retro-core",
+ "sha2",
 ]
 
 [[package]]

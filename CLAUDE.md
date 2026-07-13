@@ -34,8 +34,8 @@ The workspace contains seven functional crates:
 - `format-nestest-log`: bounded hostile-byte parser for reference CPU trace rows.
 - `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, and a
   minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults.
-- `retro-testkit`: deterministic synthetic core, capture hashes, and generated
-  mapper-0 CPU reference-trace comparison.
+- `retro-testkit`: deterministic synthetic core, capture hashes, generated
+  mapper-0 trace comparison, and pinned clean-room NROM-128/NROM-256 cases.
 - `retro-cli`: headless synthetic smoke executable plus bounded, sanitized
   operator-path NROM/reference-trace commands. `nestest-v1` enforces the exact
   reviewed fixture size/hash matrix before parsing.
@@ -82,9 +82,15 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   SHA-256 identity checks precede parsing, generic output says
   `fixture_identity=unchecked`, and strict success requires 8,991 rows / 8,990
   transitions.
-- Added RustCrypto `sha2` 0.11.0 only to the CLI with default features disabled.
-  The reviewed lockfile contains its small Rust dependency graph; the crate is
-  MIT OR Apache-2.0 and requires Rust 1.85.
+- Added RustCrypto `sha2` 0.11.0 to the CLI runtime and testkit development
+  tests, with default features disabled. The reviewed lockfile contains its
+  small Rust dependency graph; the crate is MIT OR Apache-2.0 and requires
+  Rust 1.85.
+- Added a project-owned NROM diagnostic generator and two reproducible
+  architectural traces from BSD-3-Clause py65 commit
+  `3138e1b337734a9b2ac1ea90ee7a453514436221`. Both NROM-128 and NROM-256 cases
+  pass through the parser, cartridge, mapper bus, runner, and real CLI. Imported
+  oracle files are hash-pinned; no third-party ROM or operator bytes are stored.
 - Published the verified foundation as commit
   `b7c3182a8672db0bed814951cd9d959fa8eb8f7a` and its handoff update as commit
   `4515511c154c1e5fe39a45c750bda45a71569ed3`.
@@ -122,8 +128,8 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 66 passed, 0 failed.
-- Release tests: 66 passed, 0 failed; doc tests passed.
+- Debug tests: 68 passed, 0 failed.
+- Release tests: 68 passed, 0 failed; doc tests passed.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -157,6 +163,20 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   publisher preview subsequently passed and excluded all local operator
   fixtures. GitHub Actions run `29262489825` passed all four stable/fuzz jobs on
   Windows 2025 and Ubuntu 24.04.
+- The clean-room NROM generated module reproduced byte-for-byte twice at
+  SHA-256 `64b66bef80d0d07f9da4664cdf9d4ef133e070994f375a2d3071a6bda142e6c5`.
+  A mutated imported py65 module was rejected before output. The release CLI
+  matched the NROM-128 case across 41 rows / 40 transitions, ending at
+  `PC=C102`, `A=5A`, and 128 cycles. Both parser fuzz targets completed 10,000
+  Windows AddressSanitizer runs without a crash.
+- Fresh adversarial review found two P1 trust-boundary defects: Python cache
+  bytecode could bypass source hashes, and the publisher could follow an
+  allowlisted reparse point outside the workspace. The generator now compiles
+  only hash-validated source bytes into fresh in-memory modules, with no
+  filesystem import/cache path. The publisher now rejects reparse points and
+  validates the final in-root target from the same locked handle it reads.
+  Focused re-review found no remaining P0-P2 issue. A guarded, deletion-safe
+  49-file publisher preview passed and excluded operator fixtures.
 - An operator-owned mapper-1 image was identified and retained only under the
   ignored `external-fixtures/` directory. Its header is valid, but the current
   NROM-only trace boundary correctly rejected it before emulation. MMC1 remains
@@ -189,6 +209,8 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 The synthetic core proves only the shared contract/headless capture path. The
 CPU now has independent instruction-boundary samples across all documented
 encodings, but the sample is not exhaustive, the mapper-0 full trace has not
-run, and the CPU is not bus-cycle accurate. PPU/APU/I/O are intentionally
+run, and the CPU is not bus-cycle accurate. The clean-room NROM cases strengthen
+mapper-0 integration evidence but leave reset, interrupts, bus order, PPU/APU,
+and strict `nestest` unchecked. PPU/APU/I/O are intentionally
 faulted rather than simulated. Mapper 1 is not implemented. This is not a
 playable NES emulator.

@@ -17,6 +17,40 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+
+if ($null -eq ('PandaUniEmu.NativePath' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace PandaUniEmu {
+    public static class NativePath {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandle(
+            SafeFileHandle file,
+            StringBuilder path,
+            uint pathLength,
+            uint flags);
+
+        public static string FromHandle(SafeFileHandle file) {
+            var path = new StringBuilder(32768);
+            uint length = GetFinalPathNameByHandle(file, path, (uint)path.Capacity, 0);
+            if (length == 0) {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            if (length >= path.Capacity) {
+                throw new InvalidOperationException("Final publish path exceeded the Windows path limit.");
+            }
+            return path.ToString();
+        }
+    }
+}
+'@
+}
+
 $exactFiles = @(
     '.gitignore',
     'BUILD_PATH.md',
@@ -26,6 +60,7 @@ $exactFiles = @(
     'COPYING',
     'docs/ARCHITECTURE.md',
     'docs/compatibility/NES_ACCEPTANCE.md',
+    'docs/compatibility/CLEANROOM_NROM_PROVENANCE.md',
     'docs/compatibility/NESTEST_PROCEDURE.md',
     'docs/compatibility/NESTEST_PROVENANCE.md',
     'docs/CPU_6502.md',
@@ -38,7 +73,8 @@ $exactFiles = @(
     'README.md',
     'ROADMAP.md',
     'SECURITY.md',
-    'rust-toolchain.toml'
+    'rust-toolchain.toml',
+    'tools/generate-cleanroom-nrom.py'
 )
 
 function Test-PublishablePath {
@@ -54,10 +90,78 @@ function Test-PublishablePath {
         $Path -match '^tools/[^/]+\.ps1$'
 }
 
+function Assert-SafePublishFile {
+    param([Parameter(Mandatory = $true)][string] $FullName)
+
+    $rootFullName = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\')
+    $rootPrefix = $rootFullName + '\'
+    $candidate = [System.IO.Path]::GetFullPath($FullName)
+    if (-not $candidate.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Publish candidate resolves outside the project root: $candidate"
+    }
+
+    $item = Get-Item -LiteralPath $candidate -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Publish candidate is a reparse point: $candidate"
+    }
+    $directory = $item.Directory
+    while ($null -ne $directory) {
+        if (($directory.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Publish candidate has a reparse-point ancestor: $($directory.FullName)"
+        }
+        if ($directory.FullName.Equals($rootFullName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $candidate
+        }
+        $directory = $directory.Parent
+    }
+    throw "Publish candidate has no project-root ancestor: $candidate"
+}
+
+function Read-SafePublishText {
+    param([Parameter(Mandatory = $true)][string] $FullName)
+
+    $safeFullName = Assert-SafePublishFile -FullName $FullName
+    $stream = [System.IO.FileStream]::new(
+        $safeFullName,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::None
+    )
+    try {
+        $finalPath = [PandaUniEmu.NativePath]::FromHandle($stream.SafeFileHandle)
+        if ($finalPath.StartsWith('\\?\UNC\', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $finalPath = '\\' + $finalPath.Substring(8)
+        }
+        elseif ($finalPath.StartsWith('\\?\', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $finalPath = $finalPath.Substring(4)
+        }
+
+        $rootFullName = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\')
+        $rootPrefix = $rootFullName + '\'
+        $finalFullName = [System.IO.Path]::GetFullPath($finalPath)
+        if (-not $finalFullName.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Opened publish file resolves outside the project root: $finalFullName"
+        }
+
+        $encoding = [System.Text.UTF8Encoding]::new($false, $true)
+        $reader = [System.IO.StreamReader]::new($stream, $encoding, $true, 1024, $true)
+        try {
+            return $reader.ReadToEnd()
+        }
+        finally {
+            $reader.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 $files = Get-ChildItem -LiteralPath $projectRoot -Recurse -File | ForEach-Object {
     $relative = $_.FullName.Substring($projectRoot.Length + 1).Replace('\', '/')
     if (Test-PublishablePath -Path $relative) {
-        [pscustomobject]@{ Path = $relative; FullName = $_.FullName }
+        $safeFullName = Assert-SafePublishFile -FullName $_.FullName
+        [pscustomobject]@{ Path = $relative; FullName = $safeFullName }
     }
 } | Sort-Object Path
 
@@ -180,6 +284,10 @@ else {
 }
 
 if ($WhatIf) {
+    foreach ($file in $files) {
+        [void](Read-SafePublishText -FullName $file.FullName)
+    }
+    Write-Host 'WhatIf: every allowlisted file passed handle-based in-root and UTF-8 validation.'
     Write-Host 'WhatIf: the parent tree and all non-allowlisted remote files will be preserved.'
     Write-Host 'WhatIf: no GitHub write calls were made.'
     exit 0
@@ -187,7 +295,7 @@ if ($WhatIf) {
 
 $treeEntries = @(
     foreach ($file in $files) {
-    $content = [System.IO.File]::ReadAllText($file.FullName)
+    $content = Read-SafePublishText -FullName $file.FullName
     $contentBytes = [System.Text.Encoding]::UTF8.GetBytes($content)
     $blob = Invoke-GhApi -Endpoint "repos/$Repository/git/blobs" -Method POST -Body @{
         content = [System.Convert]::ToBase64String($contentBytes)

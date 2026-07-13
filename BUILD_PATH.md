@@ -3,7 +3,8 @@
 This is the execution order for turning the plan into code. The shared contract,
 iNES parser, NES cartridge boundary, testkit, CLI, parser fuzz targets,
 trace-first CPU layer, mapper-0 CPU bus, generated trace runner, pinned MIT
-single-step oracle sample, and bounded operator-path trace commands now exist.
+single-step oracle sample, clean-room NROM/py65 integration checkpoint, and
+bounded operator-path trace commands now exist.
 The strict command enforces the reviewed fixture identity and expected summary
 shape. The full independent mapper trace, PPU/APU/runtime scheduling, and the
 frontend remain work, not claims of implementation.
@@ -164,9 +165,11 @@ result, and date. Performance gates use release builds and measured budgets.
    paths with SHA-256 identity enforcement.
 6. Completed: pin and curate 190 MIT-licensed independent RP2A03 single-step
    vectors covering all 151 documented encodings and required cycle profiles.
-7. Match against an operator-supplied `nestest` oracle and close every declared
+7. Completed: generate project-owned NROM-128/NROM-256 diagnostics and match
+   their pinned BSD-3 py65 architectural traces through the real mapper and CLI.
+8. Match against an operator-supplied `nestest` oracle and close every declared
    semantic/cycle divergence.
-8. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,
+9. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,
    and a dot-timed PPU oracle.
-9. Reach the headless NROM video/audio gate, then resolve and spike
+10. Reach the headless NROM video/audio gate, then resolve and spike
    `winit`/`wgpu`/`cpal` for the minimal frontend.

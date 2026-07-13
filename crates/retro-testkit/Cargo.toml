@@ -12,5 +12,8 @@ format-ines = { path = "../format-ines" }
 format-nestest-log = { path = "../format-nestest-log" }
 retro-core = { path = "../retro-core" }
 
+[dev-dependencies]
+sha2 = { version = "0.11.0", default-features = false }
+
 [lints]
 workspace = true

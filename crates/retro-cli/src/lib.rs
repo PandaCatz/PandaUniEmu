@@ -523,6 +523,30 @@ mod tests {
     }
 
     #[test]
+    fn cleanroom_nrom_cases_run_through_the_real_cli_boundary() {
+        let directory = FixtureDirectory::new();
+        for case in retro_testkit::cleanroom_nrom::CASES {
+            let rom = directory.write(&format!("{}.nes", case.name), &case.image());
+            let log = directory.write(&format!("{}.log", case.name), case.trace.as_bytes());
+            let (status, stdout, stderr) = run(vec![
+                OsString::from("nes-trace"),
+                rom.into_os_string(),
+                log.into_os_string(),
+            ]);
+            assert_eq!(status, EXIT_OK, "{} status: {stderr}", case.name);
+            assert!(
+                stdout.starts_with(&format!(
+                    "nes-trace-v1 fixture_identity=unchecked rows_matched={} transitions_verified={} ",
+                    case.rows, case.transitions
+                )),
+                "{} stdout: {stdout}",
+                case.name
+            );
+            assert!(stderr.is_empty(), "{} stderr: {stderr}", case.name);
+        }
+    }
+
+    #[test]
     fn strict_command_rejects_generated_files_before_parsing() {
         let directory = FixtureDirectory::new();
         let private_marker = "PRIVATE-LOG-CONTENT";
