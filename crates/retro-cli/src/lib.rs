@@ -524,6 +524,7 @@ mod tests {
 
     #[test]
     fn cleanroom_nrom_cases_run_through_the_real_cli_boundary() {
+        assert_eq!(retro_testkit::cleanroom_nrom::CASES.len(), 3);
         let directory = FixtureDirectory::new();
         for case in retro_testkit::cleanroom_nrom::CASES {
             let rom = directory.write(&format!("{}.nes", case.name), &case.image());

@@ -6,9 +6,9 @@ const PROGRAM: &[u8] = &[
     0xd8, 0xa2, 0xfd, 0x9a, 0xa9, 0x12, 0x8d, 0x02, 0x00, 0xad, 0x02, 0x08, 0x18, 0x69, 0x34, 0x8d,
     0xff, 0x17, 0xad, 0xff, 0x07, 0x48, 0xa9, 0x00, 0x68, 0x20, 0x80, 0xc0, 0x8d, 0x00, 0x60, 0xad,
     0x00, 0x60, 0xa9, 0xa5, 0x8d, 0x00, 0x80, 0xad, 0x00, 0x80, 0x8d, 0x01, 0x60, 0xad, 0x01, 0x60,
-    0xa0, 0x03, 0x88, 0xd0, 0xfd, 0xa9, 0x80, 0x8d, 0x00, 0x01, 0xa2, 0x01, 0xbd, 0xff, 0x00, 0x4c,
-    0xfb, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xad, 0x00, 0x70, 0x8d, 0x02, 0x60, 0xad, 0x02, 0x60, 0xad, 0xff, 0x71, 0x8d, 0x03, 0x60, 0xad,
+    0x03, 0x60, 0xa0, 0x03, 0x88, 0xd0, 0xfd, 0xa9, 0x80, 0x8d, 0x00, 0x01, 0xa2, 0x01, 0xbd, 0xff,
+    0x00, 0x4c, 0xfb, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x49, 0xff, 0x38, 0x2a, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -22,10 +22,46 @@ const PROGRAM: &[u8] = &[
     0xa9, 0x5a, 0xea,
 ];
 
+const TRAINER: &[u8] = &[
+    0xa7, 0xcc, 0xf1, 0x16, 0x3b, 0x60, 0x85, 0xaa, 0xcf, 0xf4, 0x19, 0x3e, 0x63, 0x88, 0xad, 0xd2,
+    0xf7, 0x1c, 0x41, 0x66, 0x8b, 0xb0, 0xd5, 0xfa, 0x1f, 0x44, 0x69, 0x8e, 0xb3, 0xd8, 0xfd, 0x22,
+    0x47, 0x6c, 0x91, 0xb6, 0xdb, 0x00, 0x25, 0x4a, 0x6f, 0x94, 0xb9, 0xde, 0x03, 0x28, 0x4d, 0x72,
+    0x97, 0xbc, 0xe1, 0x06, 0x2b, 0x50, 0x75, 0x9a, 0xbf, 0xe4, 0x09, 0x2e, 0x53, 0x78, 0x9d, 0xc2,
+    0xe7, 0x0c, 0x31, 0x56, 0x7b, 0xa0, 0xc5, 0xea, 0x0f, 0x34, 0x59, 0x7e, 0xa3, 0xc8, 0xed, 0x12,
+    0x37, 0x5c, 0x81, 0xa6, 0xcb, 0xf0, 0x15, 0x3a, 0x5f, 0x84, 0xa9, 0xce, 0xf3, 0x18, 0x3d, 0x62,
+    0x87, 0xac, 0xd1, 0xf6, 0x1b, 0x40, 0x65, 0x8a, 0xaf, 0xd4, 0xf9, 0x1e, 0x43, 0x68, 0x8d, 0xb2,
+    0xd7, 0xfc, 0x21, 0x46, 0x6b, 0x90, 0xb5, 0xda, 0xff, 0x24, 0x49, 0x6e, 0x93, 0xb8, 0xdd, 0x02,
+    0x27, 0x4c, 0x71, 0x96, 0xbb, 0xe0, 0x05, 0x2a, 0x4f, 0x74, 0x99, 0xbe, 0xe3, 0x08, 0x2d, 0x52,
+    0x77, 0x9c, 0xc1, 0xe6, 0x0b, 0x30, 0x55, 0x7a, 0x9f, 0xc4, 0xe9, 0x0e, 0x33, 0x58, 0x7d, 0xa2,
+    0xc7, 0xec, 0x11, 0x36, 0x5b, 0x80, 0xa5, 0xca, 0xef, 0x14, 0x39, 0x5e, 0x83, 0xa8, 0xcd, 0xf2,
+    0x17, 0x3c, 0x61, 0x86, 0xab, 0xd0, 0xf5, 0x1a, 0x3f, 0x64, 0x89, 0xae, 0xd3, 0xf8, 0x1d, 0x42,
+    0x67, 0x8c, 0xb1, 0xd6, 0xfb, 0x20, 0x45, 0x6a, 0x8f, 0xb4, 0xd9, 0xfe, 0x23, 0x48, 0x6d, 0x92,
+    0xb7, 0xdc, 0x01, 0x26, 0x4b, 0x70, 0x95, 0xba, 0xdf, 0x04, 0x29, 0x4e, 0x73, 0x98, 0xbd, 0xe2,
+    0x07, 0x2c, 0x51, 0x76, 0x9b, 0xc0, 0xe5, 0x0a, 0x2f, 0x54, 0x79, 0x9e, 0xc3, 0xe8, 0x0d, 0x32,
+    0x57, 0x7c, 0xa1, 0xc6, 0xeb, 0x10, 0x35, 0x5a, 0x7f, 0xa4, 0xc9, 0xee, 0x13, 0x38, 0x5d, 0x82,
+    0xa7, 0xcc, 0xf1, 0x16, 0x3b, 0x60, 0x85, 0xaa, 0xcf, 0xf4, 0x19, 0x3e, 0x63, 0x88, 0xad, 0xd2,
+    0xf7, 0x1c, 0x41, 0x66, 0x8b, 0xb0, 0xd5, 0xfa, 0x1f, 0x44, 0x69, 0x8e, 0xb3, 0xd8, 0xfd, 0x22,
+    0x47, 0x6c, 0x91, 0xb6, 0xdb, 0x00, 0x25, 0x4a, 0x6f, 0x94, 0xb9, 0xde, 0x03, 0x28, 0x4d, 0x72,
+    0x97, 0xbc, 0xe1, 0x06, 0x2b, 0x50, 0x75, 0x9a, 0xbf, 0xe4, 0x09, 0x2e, 0x53, 0x78, 0x9d, 0xc2,
+    0xe7, 0x0c, 0x31, 0x56, 0x7b, 0xa0, 0xc5, 0xea, 0x0f, 0x34, 0x59, 0x7e, 0xa3, 0xc8, 0xed, 0x12,
+    0x37, 0x5c, 0x81, 0xa6, 0xcb, 0xf0, 0x15, 0x3a, 0x5f, 0x84, 0xa9, 0xce, 0xf3, 0x18, 0x3d, 0x62,
+    0x87, 0xac, 0xd1, 0xf6, 0x1b, 0x40, 0x65, 0x8a, 0xaf, 0xd4, 0xf9, 0x1e, 0x43, 0x68, 0x8d, 0xb2,
+    0xd7, 0xfc, 0x21, 0x46, 0x6b, 0x90, 0xb5, 0xda, 0xff, 0x24, 0x49, 0x6e, 0x93, 0xb8, 0xdd, 0x02,
+    0x27, 0x4c, 0x71, 0x96, 0xbb, 0xe0, 0x05, 0x2a, 0x4f, 0x74, 0x99, 0xbe, 0xe3, 0x08, 0x2d, 0x52,
+    0x77, 0x9c, 0xc1, 0xe6, 0x0b, 0x30, 0x55, 0x7a, 0x9f, 0xc4, 0xe9, 0x0e, 0x33, 0x58, 0x7d, 0xa2,
+    0xc7, 0xec, 0x11, 0x36, 0x5b, 0x80, 0xa5, 0xca, 0xef, 0x14, 0x39, 0x5e, 0x83, 0xa8, 0xcd, 0xf2,
+    0x17, 0x3c, 0x61, 0x86, 0xab, 0xd0, 0xf5, 0x1a, 0x3f, 0x64, 0x89, 0xae, 0xd3, 0xf8, 0x1d, 0x42,
+    0x67, 0x8c, 0xb1, 0xd6, 0xfb, 0x20, 0x45, 0x6a, 0x8f, 0xb4, 0xd9, 0xfe, 0x23, 0x48, 0x6d, 0x92,
+    0xb7, 0xdc, 0x01, 0x26, 0x4b, 0x70, 0x95, 0xba, 0xdf, 0x04, 0x29, 0x4e, 0x73, 0x98, 0xbd, 0xe2,
+    0x07, 0x2c, 0x51, 0x76, 0x9b, 0xc0, 0xe5, 0x0a, 0x2f, 0x54, 0x79, 0x9e, 0xc3, 0xe8, 0x0d, 0x32,
+    0x57, 0x7c, 0xa1, 0xc6, 0xeb, 0x10, 0x35, 0x5a, 0x7f, 0xa4, 0xc9, 0xee, 0x13, 0x38, 0x5d, 0x82,
+];
+
 #[derive(Clone, Copy, Debug)]
 pub struct CleanroomCase {
     pub name: &'static str,
     prg_banks: u8,
+    trainer: bool,
     pub image_sha256: &'static str,
     pub trace_sha256: &'static str,
     pub rows: usize,
@@ -38,21 +74,27 @@ impl CleanroomCase {
     #[must_use]
     pub fn image(self) -> Vec<u8> {
         let prg_len = usize::from(self.prg_banks) * 16 * 1024;
-        let mut image = vec![0; 16 + prg_len + 8 * 1024];
+        let trainer_len = if self.trainer { TRAINER.len() } else { 0 };
+        let mut image = vec![0; 16 + trainer_len + prg_len + 8 * 1024];
         image[0..4].copy_from_slice(b"NES\x1a");
         image[4] = self.prg_banks;
         image[5] = 1;
+        image[6] = u8::from(self.trainer) << 2;
         image[8] = 1;
+        if self.trainer {
+            image[16..16 + TRAINER.len()].copy_from_slice(TRAINER);
+        }
+        let prg_start = 16 + trainer_len;
         let program_offset = if self.prg_banks == 1 {
-            16
+            prg_start
         } else {
-            16 + 16 * 1024
+            prg_start + 16 * 1024
         };
         image[program_offset..program_offset + PROGRAM.len()].copy_from_slice(PROGRAM);
         if self.prg_banks == 2 {
-            image[16] = 0x5a;
+            image[prg_start] = 0x5a;
         }
-        let vector = 16 + prg_len - 4;
+        let vector = prg_start + prg_len - 4;
         image[vector..vector + 2].copy_from_slice(&[0x00, 0xc0]);
         image
     }
@@ -65,11 +107,12 @@ pub const CASES: &[CleanroomCase] = &[
     CleanroomCase {
         name: "nrom128",
         prg_banks: 1,
-        image_sha256: "5c2ec95f814a51cd220d6b2200371596e2e6c9b1cc159e90f6b2fa3401b4b9e3",
-        trace_sha256: "4a42a862c561fb2a394760c547d40d2d31687abe3bb50edaf1bf0394a414df8e",
-        rows: 41,
-        transitions: 40,
-        final_cycles: 128,
+        trainer: false,
+        image_sha256: "bb14da0e0f2d53e36bc92950928a1b16b29d11447baa01eaf7aad24676f14361",
+        trace_sha256: "d93c0825f52ec5ff8739168f763ba33aa84a5a3ddeb06e62191a82b14a488f8d",
+        rows: 47,
+        transitions: 46,
+        final_cycles: 152,
         trace: r#"C000 D8 CLD A:00 X:00 Y:00 P:24 SP:FD CYC:7
 C001 A2 FD LDX A:00 X:00 Y:00 P:24 SP:FD CYC:9
 C003 9A TXS A:00 X:FD Y:00 P:A4 SP:FD CYC:11
@@ -95,31 +138,38 @@ C024 8D 00 80 STA A:A5 X:FD Y:00 P:A5 SP:FD CYC:72
 C027 AD 00 80 LDA A:A5 X:FD Y:00 P:A5 SP:FD CYC:76
 C02A 8D 01 60 STA A:D8 X:FD Y:00 P:A5 SP:FD CYC:80
 C02D AD 01 60 LDA A:D8 X:FD Y:00 P:A5 SP:FD CYC:84
-C030 A0 03 LDY A:D8 X:FD Y:00 P:A5 SP:FD CYC:88
-C032 88 DEY A:D8 X:FD Y:03 P:25 SP:FD CYC:90
-C033 D0 FD BNE A:D8 X:FD Y:02 P:25 SP:FD CYC:92
-C032 88 DEY A:D8 X:FD Y:02 P:25 SP:FD CYC:95
-C033 D0 FD BNE A:D8 X:FD Y:01 P:25 SP:FD CYC:97
-C032 88 DEY A:D8 X:FD Y:01 P:25 SP:FD CYC:100
-C033 D0 FD BNE A:D8 X:FD Y:00 P:27 SP:FD CYC:102
-C035 A9 80 LDA A:D8 X:FD Y:00 P:27 SP:FD CYC:104
-C037 8D 00 01 STA A:80 X:FD Y:00 P:A5 SP:FD CYC:106
-C03A A2 01 LDX A:80 X:FD Y:00 P:A5 SP:FD CYC:110
-C03C BD FF 00 LDA A:80 X:01 Y:00 P:25 SP:FD CYC:112
-C03F 4C FB C0 JMP A:80 X:01 Y:00 P:A5 SP:FD CYC:117
-C0FB A9 00 LDA A:80 X:01 Y:00 P:A5 SP:FD CYC:120
-C0FD F0 01 BEQ A:00 X:01 Y:00 P:27 SP:FD CYC:122
-C100 A9 5A LDA A:00 X:01 Y:00 P:27 SP:FD CYC:126
-C102 EA NOP A:5A X:01 Y:00 P:25 SP:FD CYC:128"#,
+C030 AD 00 70 LDA A:D8 X:FD Y:00 P:A5 SP:FD CYC:88
+C033 8D 02 60 STA A:00 X:FD Y:00 P:27 SP:FD CYC:92
+C036 AD 02 60 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:96
+C039 AD FF 71 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:100
+C03C 8D 03 60 STA A:00 X:FD Y:00 P:27 SP:FD CYC:104
+C03F AD 03 60 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:108
+C042 A0 03 LDY A:00 X:FD Y:00 P:27 SP:FD CYC:112
+C044 88 DEY A:00 X:FD Y:03 P:25 SP:FD CYC:114
+C045 D0 FD BNE A:00 X:FD Y:02 P:25 SP:FD CYC:116
+C044 88 DEY A:00 X:FD Y:02 P:25 SP:FD CYC:119
+C045 D0 FD BNE A:00 X:FD Y:01 P:25 SP:FD CYC:121
+C044 88 DEY A:00 X:FD Y:01 P:25 SP:FD CYC:124
+C045 D0 FD BNE A:00 X:FD Y:00 P:27 SP:FD CYC:126
+C047 A9 80 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:128
+C049 8D 00 01 STA A:80 X:FD Y:00 P:A5 SP:FD CYC:130
+C04C A2 01 LDX A:80 X:FD Y:00 P:A5 SP:FD CYC:134
+C04E BD FF 00 LDA A:80 X:01 Y:00 P:25 SP:FD CYC:136
+C051 4C FB C0 JMP A:80 X:01 Y:00 P:A5 SP:FD CYC:141
+C0FB A9 00 LDA A:80 X:01 Y:00 P:A5 SP:FD CYC:144
+C0FD F0 01 BEQ A:00 X:01 Y:00 P:27 SP:FD CYC:146
+C100 A9 5A LDA A:00 X:01 Y:00 P:27 SP:FD CYC:150
+C102 EA NOP A:5A X:01 Y:00 P:25 SP:FD CYC:152"#,
     },
     CleanroomCase {
         name: "nrom256",
         prg_banks: 2,
-        image_sha256: "2ad84794c15183a10184b533adc69ffb9b3b2baf91fdaa7f271c25501904ddd0",
-        trace_sha256: "13ac7f450b1744ba469bf5ba49053b53380e43b778e92033ccceaa67833c2404",
-        rows: 41,
-        transitions: 40,
-        final_cycles: 128,
+        trainer: false,
+        image_sha256: "adb37217656eb7ad82e68eb72de3e6fb3bb2f6771bd7d829833b8044ec8533d3",
+        trace_sha256: "07404eda6e717db24e44286e853fcc1bb6c3264c5260cfb5e960e185a8cf0612",
+        rows: 47,
+        transitions: 46,
+        final_cycles: 152,
         trace: r#"C000 D8 CLD A:00 X:00 Y:00 P:24 SP:FD CYC:7
 C001 A2 FD LDX A:00 X:00 Y:00 P:24 SP:FD CYC:9
 C003 9A TXS A:00 X:FD Y:00 P:A4 SP:FD CYC:11
@@ -145,21 +195,84 @@ C024 8D 00 80 STA A:A5 X:FD Y:00 P:A5 SP:FD CYC:72
 C027 AD 00 80 LDA A:A5 X:FD Y:00 P:A5 SP:FD CYC:76
 C02A 8D 01 60 STA A:5A X:FD Y:00 P:25 SP:FD CYC:80
 C02D AD 01 60 LDA A:5A X:FD Y:00 P:25 SP:FD CYC:84
-C030 A0 03 LDY A:5A X:FD Y:00 P:25 SP:FD CYC:88
-C032 88 DEY A:5A X:FD Y:03 P:25 SP:FD CYC:90
-C033 D0 FD BNE A:5A X:FD Y:02 P:25 SP:FD CYC:92
-C032 88 DEY A:5A X:FD Y:02 P:25 SP:FD CYC:95
-C033 D0 FD BNE A:5A X:FD Y:01 P:25 SP:FD CYC:97
-C032 88 DEY A:5A X:FD Y:01 P:25 SP:FD CYC:100
-C033 D0 FD BNE A:5A X:FD Y:00 P:27 SP:FD CYC:102
-C035 A9 80 LDA A:5A X:FD Y:00 P:27 SP:FD CYC:104
-C037 8D 00 01 STA A:80 X:FD Y:00 P:A5 SP:FD CYC:106
-C03A A2 01 LDX A:80 X:FD Y:00 P:A5 SP:FD CYC:110
-C03C BD FF 00 LDA A:80 X:01 Y:00 P:25 SP:FD CYC:112
-C03F 4C FB C0 JMP A:80 X:01 Y:00 P:A5 SP:FD CYC:117
-C0FB A9 00 LDA A:80 X:01 Y:00 P:A5 SP:FD CYC:120
-C0FD F0 01 BEQ A:00 X:01 Y:00 P:27 SP:FD CYC:122
-C100 A9 5A LDA A:00 X:01 Y:00 P:27 SP:FD CYC:126
-C102 EA NOP A:5A X:01 Y:00 P:25 SP:FD CYC:128"#,
+C030 AD 00 70 LDA A:5A X:FD Y:00 P:25 SP:FD CYC:88
+C033 8D 02 60 STA A:00 X:FD Y:00 P:27 SP:FD CYC:92
+C036 AD 02 60 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:96
+C039 AD FF 71 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:100
+C03C 8D 03 60 STA A:00 X:FD Y:00 P:27 SP:FD CYC:104
+C03F AD 03 60 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:108
+C042 A0 03 LDY A:00 X:FD Y:00 P:27 SP:FD CYC:112
+C044 88 DEY A:00 X:FD Y:03 P:25 SP:FD CYC:114
+C045 D0 FD BNE A:00 X:FD Y:02 P:25 SP:FD CYC:116
+C044 88 DEY A:00 X:FD Y:02 P:25 SP:FD CYC:119
+C045 D0 FD BNE A:00 X:FD Y:01 P:25 SP:FD CYC:121
+C044 88 DEY A:00 X:FD Y:01 P:25 SP:FD CYC:124
+C045 D0 FD BNE A:00 X:FD Y:00 P:27 SP:FD CYC:126
+C047 A9 80 LDA A:00 X:FD Y:00 P:27 SP:FD CYC:128
+C049 8D 00 01 STA A:80 X:FD Y:00 P:A5 SP:FD CYC:130
+C04C A2 01 LDX A:80 X:FD Y:00 P:A5 SP:FD CYC:134
+C04E BD FF 00 LDA A:80 X:01 Y:00 P:25 SP:FD CYC:136
+C051 4C FB C0 JMP A:80 X:01 Y:00 P:A5 SP:FD CYC:141
+C0FB A9 00 LDA A:80 X:01 Y:00 P:A5 SP:FD CYC:144
+C0FD F0 01 BEQ A:00 X:01 Y:00 P:27 SP:FD CYC:146
+C100 A9 5A LDA A:00 X:01 Y:00 P:27 SP:FD CYC:150
+C102 EA NOP A:5A X:01 Y:00 P:25 SP:FD CYC:152"#,
+    },
+    CleanroomCase {
+        name: "nrom128_trainer",
+        prg_banks: 1,
+        trainer: true,
+        image_sha256: "48045390f5a90453675d2e513d6d727d0e7b8fe5d2451137e9ca72c25785b51f",
+        trace_sha256: "88b9cb0ca690e1b4c9dd92109135fc77a2fcdee63d506545844d2dbd769c3e8d",
+        rows: 47,
+        transitions: 46,
+        final_cycles: 152,
+        trace: r#"C000 D8 CLD A:00 X:00 Y:00 P:24 SP:FD CYC:7
+C001 A2 FD LDX A:00 X:00 Y:00 P:24 SP:FD CYC:9
+C003 9A TXS A:00 X:FD Y:00 P:A4 SP:FD CYC:11
+C004 A9 12 LDA A:00 X:FD Y:00 P:A4 SP:FD CYC:13
+C006 8D 02 00 STA A:12 X:FD Y:00 P:24 SP:FD CYC:15
+C009 AD 02 08 LDA A:12 X:FD Y:00 P:24 SP:FD CYC:19
+C00C 18 CLC A:12 X:FD Y:00 P:24 SP:FD CYC:23
+C00D 69 34 ADC A:12 X:FD Y:00 P:24 SP:FD CYC:25
+C00F 8D FF 17 STA A:46 X:FD Y:00 P:24 SP:FD CYC:27
+C012 AD FF 07 LDA A:46 X:FD Y:00 P:24 SP:FD CYC:31
+C015 48 PHA A:46 X:FD Y:00 P:24 SP:FD CYC:35
+C016 A9 00 LDA A:46 X:FD Y:00 P:24 SP:FC CYC:38
+C018 68 PLA A:00 X:FD Y:00 P:26 SP:FC CYC:40
+C019 20 80 C0 JSR A:46 X:FD Y:00 P:24 SP:FD CYC:44
+C080 49 FF EOR A:46 X:FD Y:00 P:24 SP:FB CYC:50
+C082 38 SEC A:B9 X:FD Y:00 P:A4 SP:FB CYC:52
+C083 2A ROL A:B9 X:FD Y:00 P:A5 SP:FB CYC:54
+C084 60 RTS A:73 X:FD Y:00 P:25 SP:FB CYC:56
+C01C 8D 00 60 STA A:73 X:FD Y:00 P:25 SP:FD CYC:62
+C01F AD 00 60 LDA A:73 X:FD Y:00 P:25 SP:FD CYC:66
+C022 A9 A5 LDA A:73 X:FD Y:00 P:25 SP:FD CYC:70
+C024 8D 00 80 STA A:A5 X:FD Y:00 P:A5 SP:FD CYC:72
+C027 AD 00 80 LDA A:A5 X:FD Y:00 P:A5 SP:FD CYC:76
+C02A 8D 01 60 STA A:D8 X:FD Y:00 P:A5 SP:FD CYC:80
+C02D AD 01 60 LDA A:D8 X:FD Y:00 P:A5 SP:FD CYC:84
+C030 AD 00 70 LDA A:D8 X:FD Y:00 P:A5 SP:FD CYC:88
+C033 8D 02 60 STA A:A7 X:FD Y:00 P:A5 SP:FD CYC:92
+C036 AD 02 60 LDA A:A7 X:FD Y:00 P:A5 SP:FD CYC:96
+C039 AD FF 71 LDA A:A7 X:FD Y:00 P:A5 SP:FD CYC:100
+C03C 8D 03 60 STA A:82 X:FD Y:00 P:A5 SP:FD CYC:104
+C03F AD 03 60 LDA A:82 X:FD Y:00 P:A5 SP:FD CYC:108
+C042 A0 03 LDY A:82 X:FD Y:00 P:A5 SP:FD CYC:112
+C044 88 DEY A:82 X:FD Y:03 P:25 SP:FD CYC:114
+C045 D0 FD BNE A:82 X:FD Y:02 P:25 SP:FD CYC:116
+C044 88 DEY A:82 X:FD Y:02 P:25 SP:FD CYC:119
+C045 D0 FD BNE A:82 X:FD Y:01 P:25 SP:FD CYC:121
+C044 88 DEY A:82 X:FD Y:01 P:25 SP:FD CYC:124
+C045 D0 FD BNE A:82 X:FD Y:00 P:27 SP:FD CYC:126
+C047 A9 80 LDA A:82 X:FD Y:00 P:27 SP:FD CYC:128
+C049 8D 00 01 STA A:80 X:FD Y:00 P:A5 SP:FD CYC:130
+C04C A2 01 LDX A:80 X:FD Y:00 P:A5 SP:FD CYC:134
+C04E BD FF 00 LDA A:80 X:01 Y:00 P:25 SP:FD CYC:136
+C051 4C FB C0 JMP A:80 X:01 Y:00 P:A5 SP:FD CYC:141
+C0FB A9 00 LDA A:80 X:01 Y:00 P:A5 SP:FD CYC:144
+C0FD F0 01 BEQ A:00 X:01 Y:00 P:27 SP:FD CYC:146
+C100 A9 5A LDA A:00 X:01 Y:00 P:27 SP:FD CYC:150
+C102 EA NOP A:5A X:01 Y:00 P:25 SP:FD CYC:152"#,
     },
 ];

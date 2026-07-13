@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-13
 
-`tools/generate-cleanroom-nrom.py` constructs two project-owned diagnostic
+`tools/generate-cleanroom-nrom.py` constructs three project-owned diagnostic
 images and independent instruction-boundary traces. No Nintendo, commercial
 game, `nestest`, or operator-supplied bytes are inputs or outputs committed to
 the repository. The generated Rust module reconstructs each image in memory.
@@ -43,22 +43,26 @@ python tools/generate-cleanroom-nrom.py `
 ```
 
 The checked-in generated module SHA-256 is
-`64b66bef80d0d07f9da4664cdf9d4ef133e070994f375a2d3071a6bda142e6c5`.
+`c54fb4ce577aa3331386bd6eb91260869493a5c4fbc89fc409f827497d2c9054`.
 Two clean regenerations on 2026-07-13 were byte-identical. A mutated imported
 py65 module was rejected before output.
 
 | Case | Image SHA-256 | Trace SHA-256 | Rows / transitions | Final state |
 |---|---|---|---|---|
-| NROM-128 | `5c2ec95f814a51cd220d6b2200371596e2e6c9b1cc159e90f6b2fa3401b4b9e3` | `4a42a862c561fb2a394760c547d40d2d31687abe3bb50edaf1bf0394a414df8e` | 41 / 40 | `PC=C102 A=5A X=01 Y=00 P=25 SP=FD CYC=128` |
-| NROM-256 | `2ad84794c15183a10184b533adc69ffb9b3b2baf91fdaa7f271c25501904ddd0` | `13ac7f450b1744ba469bf5ba49053b53380e43b778e92033ccceaa67833c2404` | 41 / 40 | `PC=C102 A=5A X=01 Y=00 P=25 SP=FD CYC=128` |
+| NROM-128 | `bb14da0e0f2d53e36bc92950928a1b16b29d11447baa01eaf7aad24676f14361` | `d93c0825f52ec5ff8739168f763ba33aa84a5a3ddeb06e62191a82b14a488f8d` | 47 / 46 | `PC=C102 A=5A X=01 Y=00 P=25 SP=FD CYC=152` |
+| NROM-256 | `adb37217656eb7ad82e68eb72de3e6fb3bb2f6771bd7d829833b8044ec8533d3` | `07404eda6e717db24e44286e853fcc1bb6c3264c5260cfb5e960e185a8cf0612` | 47 / 46 | `PC=C102 A=5A X=01 Y=00 P=25 SP=FD CYC=152` |
+| NROM-128 + trainer | `48045390f5a90453675d2e513d6d727d0e7b8fe5d2451137e9ca72c25785b51f` | `88b9cb0ca690e1b4c9dd92109135fc77a2fcdee63d506545844d2dbd769c3e8d` | 47 / 46 | `PC=C102 A=5A X=01 Y=00 P=25 SP=FD CYC=152` |
 
 ## Evidence boundary
 
 The diagnostics exercise mapper-0 CPU-side RAM mirrors, NROM-128 PRG mirroring,
 NROM-256 bank placement, PRG RAM, ignored PRG-ROM writes, stack/control flow,
 branches, and page-cross cycle totals through the real parser, cartridge, CPU
-bus, trace runner, and CLI boundary. Starting CPU state is explicit; reset is
-not invoked. Decimal mode stays clear.
+bus, trace runner, and CLI boundary. The trainer is project-owned deterministic
+data with byte `i = (37 * i + A7) mod 256`; it yields `$7000=A7` and
+`$71FF=82`. Both values affect independently checked trace rows, so correct
+header offset and preload are required. Starting CPU state is
+explicit; reset is not invoked. Decimal mode stays clear.
 
 This evidence is architectural and intentionally narrow: `bus_order=unchecked`,
 `reset=unchecked`, `interrupts=unchecked`, and `nestest=unrun`. It does not

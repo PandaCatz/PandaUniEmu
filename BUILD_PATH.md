@@ -166,7 +166,8 @@ result, and date. Performance gates use release builds and measured budgets.
 6. Completed: pin and curate 190 MIT-licensed independent RP2A03 single-step
    vectors covering all 151 documented encodings and required cycle profiles.
 7. Completed: generate project-owned NROM-128/NROM-256 diagnostics and match
-   their pinned BSD-3 py65 architectural traces through the real mapper and CLI.
+   their pinned BSD-3 py65 architectural traces through the real mapper and CLI,
+   including trainer slicing and `$7000-$71FF` preload integration.
 8. Match against an operator-supplied `nestest` oracle and close every declared
    semantic/cycle divergence.
 9. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,

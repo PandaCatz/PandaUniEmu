@@ -10,12 +10,17 @@ crates exist. The mapper-0 CPU bus and a generated trace runner now work, but no
 operator-supplied `nestest` pair has been run. A pinned MIT single-step sample
 now provides independent instruction-boundary evidence across all 151
 documented encodings. Project-owned NROM-128/NROM-256 diagnostics also match
-pinned py65 architectural traces through the mapper and CLI. There is no
+pinned py65 architectural traces through the mapper and CLI, including a
+trainer-bearing NROM-128 case that reads both preload endpoints. There is no
 PPU/APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
 
+- Adopted `GPL-2.0-or-later` for project-owned code and documentation, added the
+  canonical GPLv2 text at the repository root, declared the SPDX expression in
+  every Rust package, and documented that `NOTICE` material and operator ROMs
+  retain their own legal status.
 - Added `format-nestest-log`, a separate ASCII byte parser with total-size,
   line-size, and row-count limits; strict state fields; opcode bounds; and
   non-panicking errors that do not echo hostile input.
@@ -64,6 +69,9 @@ frontend, or playable emulation.
   parser, cartridge, CPU bus, trace runner, and CLI. They exercise CPU RAM
   mirrors, both NROM PRG layouts, PRG RAM, ignored ROM writes, stack/control
   flow, branches, and page-cross cycles without importing game or test-ROM data.
+- Extended the clean-room suite to three 47-row / 46-transition cases. The new
+  trainer-bearing NROM-128 image proves the full header offset, parser slice,
+  owned-cartridge copy, `$7000-$71FF` preload, CPU-read, trace, and CLI path.
 
 The mapper-bus/reference-runner checkpoint passed fresh adversarial review, a
 deletion-safe 39-file publisher preview, and the Windows/Linux CI matrix. The
@@ -114,6 +122,11 @@ nightly-2026-07-12 on 2026-07-13:
   Mutating an imported py65 module caused rejection before output. The release
   CLI matched the NROM-128 case across all 41 rows / 40 transitions and ended at
   `PC=C102`, `A=5A`, and 128 cycles.
+- The trainer extension supersedes that module at exact SHA-256
+  `c54fb4ce577aa3331386bd6eb91260869493a5c4fbc89fc409f827497d2c9054`.
+  Two clean regenerations were byte-identical. All three cases match 47 rows /
+  46 transitions and 152 cycles. The release CLI ran the trainer case from real
+  files, with `$7000=A7` and `$71FF=82` affecting checked trace rows.
 - Fresh adversarial review found two P1 trust-boundary defects. The generator
   could execute cached Python bytecode after validating source, and the
   publisher could follow an allowlisted reparse point outside the workspace.
@@ -194,10 +207,25 @@ gate, implement and verify MMC1 for the supplied operator target.
 
 ## Open decisions
 
-1. Initial source license before accepting outside contributions.
-2. Whether Linux is a release target or a CI-only target for the first build.
-3. Additional independently licensed interrupt/bus suite and acquisition source.
-4. Final product name.
+1. Whether Linux is a release target or a CI-only target for the first build.
+2. Additional independently licensed interrupt/bus suite and acquisition source.
+3. Final product name.
+
+## License decision
+
+On 2026-07-13 the project selected `GPL-2.0-or-later` for project-owned source
+code and documentation. This keeps GPL version 2 available while allowing a
+recipient to choose a later GPL version. The root `LICENSE` contains the full
+GPLv2 terms; package manifests carry the SPDX expression; `NOTICE` preserves
+separate third-party licenses. No project license applies to commercial ROMs,
+firmware, or operator-supplied fixtures, which remain outside the repository.
+The normalized license text matched GitHub's canonical GPL-2.0 template at
+SHA-256 `8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643`.
+Cargo metadata confirmed the SPDX expression for all seven workspace crates and
+the fuzz package; all current external Rust dependencies report
+`MIT OR Apache-2.0`. Format, warnings-denied clippy, 68 debug tests, 68 release
+tests, release doc tests, and a fresh P0-P2 license review passed. The publisher
+dry-run validated all 50 allowlisted files without making a GitHub write.
 
 ## Environment notes
 

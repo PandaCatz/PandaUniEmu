@@ -22,6 +22,16 @@ PY65_IMPORT_HASHES = {
 START = 0xC000
 SENTINEL = 0xC102
 MAX_STEPS = 64
+TRAINER_LEN = 512
+
+
+def trainer_byte(index: int) -> int:
+    if not 0 <= index < TRAINER_LEN:
+        raise ValueError("trainer index is out of range")
+    return (index * 37 + 0xA7) & 0xFF
+
+
+TRAINER = bytes(trainer_byte(index) for index in range(TRAINER_LEN))
 
 
 def build_program() -> bytes:
@@ -90,6 +100,24 @@ def build_program() -> bytes:
                 0xAD,
                 0x01,
                 0x60,  # LDA $6001 (prove the mapper-specific value persisted)
+                0xAD,
+                0x00,
+                0x70,  # LDA $7000 (trainer start / ordinary PRG RAM)
+                0x8D,
+                0x02,
+                0x60,  # STA $6002
+                0xAD,
+                0x02,
+                0x60,  # LDA $6002 (prove the start value persisted)
+                0xAD,
+                0xFF,
+                0x71,  # LDA $71FF (trainer end / ordinary PRG RAM)
+                0x8D,
+                0x03,
+                0x60,  # STA $6003
+                0xAD,
+                0x03,
+                0x60,  # LDA $6003 (prove the end value persisted)
                 0xA0,
                 0x03,  # LDY #$03
                 0x88,  # loop: DEY
@@ -120,7 +148,7 @@ def build_program() -> bytes:
 PROGRAM = build_program()
 
 
-def build_image(prg_banks: int) -> bytes:
+def build_image(prg_banks: int, trainer: bool = False) -> bytes:
     if prg_banks not in (1, 2):
         raise ValueError("clean-room image supports only one or two PRG banks")
     prg = bytearray(prg_banks * 16 * 1024)
@@ -134,8 +162,10 @@ def build_image(prg_banks: int) -> bytes:
     header[:4] = b"NES\x1a"
     header[4] = prg_banks
     header[5] = 1
+    header[6] = int(trainer) << 2
     header[8] = 1
-    return bytes(header + prg + bytearray(8 * 1024))
+    trainer_bytes = TRAINER if trainer else b""
+    return bytes(header + trainer_bytes + prg + bytearray(8 * 1024))
 
 
 class NromMemory:
@@ -145,16 +175,20 @@ class NromMemory:
         prg_banks = image[4]
         if prg_banks not in (1, 2):
             raise ValueError("oracle image is not NROM-128 or NROM-256")
-        if image[5] != 1 or image[6] != 0 or image[7] != 0 or image[8] != 1:
+        if image[5] != 1 or image[6] not in (0, 0x04) or image[7] != 0 or image[8] != 1:
             raise ValueError("oracle image has an unexpected iNES configuration")
         if any(image[9:16]):
             raise ValueError("oracle image has nonzero reserved header bytes")
-        expected_length = 16 + prg_banks * 16 * 1024 + 8 * 1024
+        trainer_len = TRAINER_LEN if image[6] & 0x04 else 0
+        expected_length = 16 + trainer_len + prg_banks * 16 * 1024 + 8 * 1024
         if len(image) != expected_length:
             raise ValueError("oracle image has a truncated or trailing payload")
-        self.prg_rom = bytes(image[16 : 16 + prg_banks * 16 * 1024])
+        prg_start = 16 + trainer_len
+        self.prg_rom = bytes(image[prg_start : prg_start + prg_banks * 16 * 1024])
         self.ram = bytearray(2 * 1024)
         self.prg_ram = bytearray(8 * 1024)
+        if trainer_len:
+            self.prg_ram[0x1000:0x1200] = image[16 : 16 + TRAINER_LEN]
 
     def __getitem__(self, address: int) -> int:
         if not isinstance(address, int) or not 0 <= address <= 0xFFFF:
@@ -260,7 +294,13 @@ def require_pinned_py65(root: Path):
     return sys.modules["py65.devices.mpu6502"].MPU
 
 
-def generate_trace(mpu_type, image: bytes, expected_marker: int) -> tuple[str, int, int]:
+def generate_trace(
+    mpu_type,
+    image: bytes,
+    expected_marker: int,
+    expected_trainer_start: int,
+    expected_trainer_end: int,
+) -> tuple[str, int, int]:
     memory = NromMemory(image)
     mpu = mpu_type(memory=memory, pc=START)
     mpu.a = 0
@@ -298,6 +338,11 @@ def generate_trace(mpu_type, image: bytes, expected_marker: int) -> tuple[str, i
         raise RuntimeError("clean-room absolute-X page-cross setup failed")
     if memory.prg_ram[0] != 0x73 or memory.prg_ram[1] != expected_marker:
         raise RuntimeError("clean-room PRG-RAM or ROM-marker check failed")
+    if (
+        memory.prg_ram[2] != expected_trainer_start
+        or memory.prg_ram[3] != expected_trainer_end
+    ):
+        raise RuntimeError("clean-room trainer endpoint checks failed")
     if memory[0x8000] != expected_marker:
         raise RuntimeError("clean-room PRG-ROM write protection failed")
     if (mpu.a, mpu.x, mpu.y, mpu.sp, mpu.pc) != (0x5A, 0x01, 0x00, 0xFD, SENTINEL):
@@ -320,6 +365,7 @@ def render_rust(cases: list[dict[str, object]]) -> str:
             "    CleanroomCase {\n"
             f"        name: \"{case['name']}\",\n"
             f"        prg_banks: {case['prg_banks']},\n"
+            f"        trainer: {str(case['trainer']).lower()},\n"
             f"        image_sha256: \"{case['image_sha256']}\",\n"
             f"        trace_sha256: \"{case['trace_sha256']}\",\n"
             f"        rows: {case['rows']},\n"
@@ -336,10 +382,15 @@ const PROGRAM: &[u8] = &[
 {rust_bytes(PROGRAM)}
 ];
 
+const TRAINER: &[u8] = &[
+{rust_bytes(TRAINER)}
+];
+
 #[derive(Clone, Copy, Debug)]
 pub struct CleanroomCase {{
     pub name: &'static str,
     prg_banks: u8,
+    trainer: bool,
     pub image_sha256: &'static str,
     pub trace_sha256: &'static str,
     pub rows: usize,
@@ -352,21 +403,27 @@ impl CleanroomCase {{
     #[must_use]
     pub fn image(self) -> Vec<u8> {{
         let prg_len = usize::from(self.prg_banks) * 16 * 1024;
-        let mut image = vec![0; 16 + prg_len + 8 * 1024];
+        let trainer_len = if self.trainer {{ TRAINER.len() }} else {{ 0 }};
+        let mut image = vec![0; 16 + trainer_len + prg_len + 8 * 1024];
         image[0..4].copy_from_slice(b"NES\\x1a");
         image[4] = self.prg_banks;
         image[5] = 1;
+        image[6] = u8::from(self.trainer) << 2;
         image[8] = 1;
+        if self.trainer {{
+            image[16..16 + TRAINER.len()].copy_from_slice(TRAINER);
+        }}
+        let prg_start = 16 + trainer_len;
         let program_offset = if self.prg_banks == 1 {{
-            16
+            prg_start
         }} else {{
-            16 + 16 * 1024
+            prg_start + 16 * 1024
         }};
         image[program_offset..program_offset + PROGRAM.len()].copy_from_slice(PROGRAM);
         if self.prg_banks == 2 {{
-            image[16] = 0x5a;
+            image[prg_start] = 0x5a;
         }}
-        let vector = 16 + prg_len - 4;
+        let vector = prg_start + prg_len - 4;
         image[vector..vector + 2].copy_from_slice(&[0x00, 0xc0]);
         image
     }}
@@ -389,13 +446,21 @@ def main() -> None:
 
     mpu_type = require_pinned_py65(args.py65_root.resolve())
     cases = []
-    for name, prg_banks, marker in (("nrom128", 1, 0xD8), ("nrom256", 2, 0x5A)):
-        image = build_image(prg_banks)
-        trace, rows, final_cycles = generate_trace(mpu_type, image, marker)
+    case_specs = (
+        ("nrom128", 1, False, 0xD8, 0x00, 0x00),
+        ("nrom256", 2, False, 0x5A, 0x00, 0x00),
+        ("nrom128_trainer", 1, True, 0xD8, TRAINER[0], TRAINER[-1]),
+    )
+    for name, prg_banks, trainer, marker, trainer_start, trainer_end in case_specs:
+        image = build_image(prg_banks, trainer)
+        trace, rows, final_cycles = generate_trace(
+            mpu_type, image, marker, trainer_start, trainer_end
+        )
         cases.append(
             {
                 "name": name,
                 "prg_banks": prg_banks,
+                "trainer": trainer,
                 "image_sha256": sha256(image),
                 "trace_sha256": sha256(trace.encode("ascii")),
                 "rows": rows,

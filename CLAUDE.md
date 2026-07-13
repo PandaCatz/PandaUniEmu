@@ -21,6 +21,9 @@ slice on top of the completed Phase 1 headless foundation.
   errors, truncation/oversize tests, and fuzz targets where applicable.
 - Keep original ROMs, firmware, test-ROM bytes, copyrighted assets, and operator
   paths out of the repository and logs.
+- Project-owned code and documentation use `GPL-2.0-or-later`; preserve
+  separately identified third-party terms in `NOTICE` and never imply that the
+  project license covers operator-supplied ROMs or firmware.
 - No `unsafe` without a measured release bottleneck, documented invariants,
   focused tests/fuzzing, and a safe baseline.
 - Warnings are errors. Do not move to the next layer with a red current gate.
@@ -86,11 +89,13 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   tests, with default features disabled. The reviewed lockfile contains its
   small Rust dependency graph; the crate is MIT OR Apache-2.0 and requires
   Rust 1.85.
-- Added a project-owned NROM diagnostic generator and two reproducible
+- Added a project-owned NROM diagnostic generator and three reproducible
   architectural traces from BSD-3-Clause py65 commit
-  `3138e1b337734a9b2ac1ea90ee7a453514436221`. Both NROM-128 and NROM-256 cases
-  pass through the parser, cartridge, mapper bus, runner, and real CLI. Imported
-  oracle files are hash-pinned; no third-party ROM or operator bytes are stored.
+  `3138e1b337734a9b2ac1ea90ee7a453514436221`. NROM-128, NROM-256, and a
+  trainer-bearing NROM-128 case pass through the parser, cartridge, mapper bus,
+  runner, and real CLI. The trainer case executes reads from `$7000` and
+  `$71FF`. Imported oracle files are hash-pinned; no third-party ROM or operator
+  bytes are stored.
 - Published the verified foundation as commit
   `b7c3182a8672db0bed814951cd9d959fa8eb8f7a` and its handoff update as commit
   `4515511c154c1e5fe39a45c750bda45a71569ed3`.
@@ -183,6 +188,12 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   `53c65b20e9d572bfe64bdaf0613481dba87d21a3` is published. GitHub Actions run
   `29265895004` passed stable format/lint/debug/release/app gates and both
   10,000-run parser fuzz jobs on Windows 2025 and Ubuntu 24.04.
+- The trainer extension supersedes the generated module at SHA-256
+  `c54fb4ce577aa3331386bd6eb91260869493a5c4fbc89fc409f827497d2c9054`.
+  Two clean regenerations were byte-identical. All three cases match 47 rows /
+  46 transitions and 152 cycles; the release CLI exercised the trainer case
+  through real files. Format, warnings-denied clippy, 68 debug tests, 68 release
+  tests, doc tests, and both 10,000-run Windows ASan parser fuzz gates passed.
 - An operator-owned mapper-1 image was identified and retained only under the
   ignored `external-fixtures/` directory. Its header is valid, but the current
   NROM-only trace boundary correctly rejected it before emulation. MMC1 remains
@@ -205,10 +216,23 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 
 ## Decisions still open
 
-- Project source license before accepting outside contributions.
 - Whether Linux is a release target or a CI-only target initially.
 - Additional independently licensed interrupt/bus suites and acquisition process.
 - Final product name.
+
+## License decision
+
+- On 2026-07-13, project-owned code and documentation were licensed as
+  `GPL-2.0-or-later`: recipients may use GPL version 2 or any later GPL version.
+- The canonical GPLv2 terms are in `LICENSE`; Cargo metadata declares the SPDX
+  expression for every workspace crate and the fuzz package.
+- `NOTICE` retains the licenses and attribution for third-party test material.
+  Commercial ROMs, firmware, and operator-supplied files are excluded from the
+  repository and are not relicensed.
+- The normalized `LICENSE` contents matched GitHub's canonical GPL-2.0 template
+  (`SHA-256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643`).
+  Format, warnings-denied clippy, 68 debug tests, 68 release tests, release doc
+  tests, and an independent P0-P2 license review all passed.
 
 ## Honest limitations
 

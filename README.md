@@ -13,8 +13,10 @@ has not run and playable console emulation does not exist yet.
 
 Project-owned NROM-128 and NROM-256 diagnostics also pass independent pinned
 py65 architectural traces through the parser, mapper bus, runner, and real CLI.
-This is a mapper-0 integration checkpoint, not proof of reset timing, bus-cycle
-order, PPU/APU behavior, MMC1 support, or gameplay.
+A third NROM-128 case executes reads from both ends of a 512-byte trainer,
+covering parser offset and PRG-RAM preload integration. This is mapper-0
+evidence, not proof of reset timing, bus-cycle order, PPU/APU behavior, MMC1
+support, or gameplay.
 
 This project targets a native Rust application with independently testable NES,
 Game Boy Advance, Sega Genesis / Mega Drive, and SNES cores behind one frontend.
@@ -50,6 +52,19 @@ measurable video and audio output.
 - `wgpu` + `winit` is the current presentation direction. Bevy is not required
   for cycle-accurate emulation and will only be considered later for product UI
   if it proves useful.
+
+## License
+
+Copyright (C) 2026 PandaCatz and contributors.
+
+Except for separately identified third-party material, this project's source
+code and documentation are licensed under the GNU General Public License,
+version 2 or (at your option) any later version (`GPL-2.0-or-later`). See
+[LICENSE](LICENSE) for the complete terms and [NOTICE](NOTICE) for retained
+third-party licenses and attribution.
+
+This license does not grant rights to commercial ROMs, firmware, game assets,
+or other operator-supplied files. Those files are not part of this repository.
 
 ## Definition of done for the first milestone
 

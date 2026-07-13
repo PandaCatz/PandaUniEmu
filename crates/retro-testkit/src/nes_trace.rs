@@ -316,6 +316,18 @@ mod tests {
 
     #[test]
     fn cleanroom_nrom_cases_match_pinned_images_and_architectural_traces() {
+        let names: Vec<_> = crate::cleanroom_nrom::CASES
+            .iter()
+            .map(|case| case.name)
+            .collect();
+        assert_eq!(names, ["nrom128", "nrom256", "nrom128_trainer"]);
+
+        let trainer_image = crate::cleanroom_nrom::CASES[2].image();
+        assert_eq!(trainer_image[6] & 0x04, 0x04);
+        assert_eq!(trainer_image[16], 0xa7);
+        assert_eq!(trainer_image[16 + 511], 0x82);
+        assert_eq!(trainer_image[16 + 512], 0xd8);
+
         for case in crate::cleanroom_nrom::CASES {
             let image = case.image();
             assert_eq!(sha256_hex(&image), case.image_sha256, "{} image", case.name);
