@@ -1,8 +1,7 @@
 # Nestest Comparison Procedure
 
-Status: the bus, bounded log parser, comparison runner, and operator-path CLI
-are exercised with generated data. No operator-supplied ROM/reference pair has
-been run.
+Status: passed on 2026-07-13 with the exact reviewed QMT CRLF pair: 8,991 rows,
+8,990 transitions, final `PC=C66E`, and 26,554 cumulative CPU cycles.
 
 ## Fixture boundary
 
@@ -47,9 +46,14 @@ implemented in the log parser, not hidden in the CPU comparison.
   reset cycles, plus generated state/opcode/cycle/fault comparison tests.
 - Implemented: bounded operator-path CLI with sanitized diagnostics and distinct
   exit statuses.
-- Still required: an operator-supplied fixture pair matching a reviewed identity
-  and a sanitized local run record. The absence of an explicit redistribution
-  license is recorded; neither file may be added to the repository.
+- Implemented: the 76 stable undocumented encodings exercised by the fixture.
+- Implemented: after verifying both exact fixture identities, the strict CLI
+  selects a CPU-only allowlist for `$4004`-`$4007` and `$4015` writes. The
+  reviewed log performs exactly five terminal writes there. The normal NROM bus
+  still faults unimplemented I/O; this policy is not evidence of APU behavior.
+
+The absence of an explicit redistribution license remains recorded; neither
+fixture file may be added to the repository or publisher snapshot.
 
 ## Local command
 

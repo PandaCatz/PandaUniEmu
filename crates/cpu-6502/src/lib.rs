@@ -105,6 +105,7 @@ pub enum Mnemonic {
     Cmp,
     Cpx,
     Cpy,
+    Dcp,
     Dec,
     Dex,
     Dey,
@@ -112,9 +113,11 @@ pub enum Mnemonic {
     Inc,
     Inx,
     Iny,
+    Isc,
     Jmp,
     Jsr,
     Lda,
+    Lax,
     Ldx,
     Ldy,
     Lsr,
@@ -128,10 +131,13 @@ pub enum Mnemonic {
     Ror,
     Rti,
     Rts,
+    Sax,
     Sbc,
     Sec,
     Sed,
     Sei,
+    Slo,
+    Sre,
     Sta,
     Stx,
     Sty,
@@ -141,6 +147,8 @@ pub enum Mnemonic {
     Txa,
     Txs,
     Tya,
+    Rla,
+    Rra,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -182,90 +190,139 @@ pub const fn decode(opcode: u8) -> Option<Instruction> {
     match opcode {
         0x00 => instruction!(Brk, Implied, 7),
         0x01 => instruction!(Ora, IndexedIndirect, 6),
+        0x03 => instruction!(Slo, IndexedIndirect, 8),
+        0x04 => instruction!(Nop, ZeroPage, 3),
         0x05 => instruction!(Ora, ZeroPage, 3),
         0x06 => instruction!(Asl, ZeroPage, 5),
+        0x07 => instruction!(Slo, ZeroPage, 5),
         0x08 => instruction!(Php, Implied, 3),
         0x09 => instruction!(Ora, Immediate, 2),
         0x0a => instruction!(Asl, Accumulator, 2),
+        0x0c => instruction!(Nop, Absolute, 4),
         0x0d => instruction!(Ora, Absolute, 4),
         0x0e => instruction!(Asl, Absolute, 6),
+        0x0f => instruction!(Slo, Absolute, 6),
         0x10 => instruction!(Bpl, Relative, 2),
         0x11 => instruction!(Ora, IndirectIndexed, 5, page),
+        0x13 => instruction!(Slo, IndirectIndexed, 8),
+        0x14 => instruction!(Nop, ZeroPageX, 4),
         0x15 => instruction!(Ora, ZeroPageX, 4),
         0x16 => instruction!(Asl, ZeroPageX, 6),
+        0x17 => instruction!(Slo, ZeroPageX, 6),
         0x18 => instruction!(Clc, Implied, 2),
         0x19 => instruction!(Ora, AbsoluteY, 4, page),
+        0x1a => instruction!(Nop, Implied, 2),
+        0x1b => instruction!(Slo, AbsoluteY, 7),
+        0x1c => instruction!(Nop, AbsoluteX, 4, page),
         0x1d => instruction!(Ora, AbsoluteX, 4, page),
         0x1e => instruction!(Asl, AbsoluteX, 7),
+        0x1f => instruction!(Slo, AbsoluteX, 7),
         0x20 => instruction!(Jsr, Absolute, 6),
         0x21 => instruction!(And, IndexedIndirect, 6),
+        0x23 => instruction!(Rla, IndexedIndirect, 8),
         0x24 => instruction!(Bit, ZeroPage, 3),
         0x25 => instruction!(And, ZeroPage, 3),
         0x26 => instruction!(Rol, ZeroPage, 5),
+        0x27 => instruction!(Rla, ZeroPage, 5),
         0x28 => instruction!(Plp, Implied, 4),
         0x29 => instruction!(And, Immediate, 2),
         0x2a => instruction!(Rol, Accumulator, 2),
         0x2c => instruction!(Bit, Absolute, 4),
         0x2d => instruction!(And, Absolute, 4),
         0x2e => instruction!(Rol, Absolute, 6),
+        0x2f => instruction!(Rla, Absolute, 6),
         0x30 => instruction!(Bmi, Relative, 2),
         0x31 => instruction!(And, IndirectIndexed, 5, page),
+        0x33 => instruction!(Rla, IndirectIndexed, 8),
+        0x34 => instruction!(Nop, ZeroPageX, 4),
         0x35 => instruction!(And, ZeroPageX, 4),
         0x36 => instruction!(Rol, ZeroPageX, 6),
+        0x37 => instruction!(Rla, ZeroPageX, 6),
         0x38 => instruction!(Sec, Implied, 2),
         0x39 => instruction!(And, AbsoluteY, 4, page),
+        0x3a => instruction!(Nop, Implied, 2),
+        0x3b => instruction!(Rla, AbsoluteY, 7),
+        0x3c => instruction!(Nop, AbsoluteX, 4, page),
         0x3d => instruction!(And, AbsoluteX, 4, page),
         0x3e => instruction!(Rol, AbsoluteX, 7),
+        0x3f => instruction!(Rla, AbsoluteX, 7),
         0x40 => instruction!(Rti, Implied, 6),
         0x41 => instruction!(Eor, IndexedIndirect, 6),
+        0x43 => instruction!(Sre, IndexedIndirect, 8),
+        0x44 => instruction!(Nop, ZeroPage, 3),
         0x45 => instruction!(Eor, ZeroPage, 3),
         0x46 => instruction!(Lsr, ZeroPage, 5),
+        0x47 => instruction!(Sre, ZeroPage, 5),
         0x48 => instruction!(Pha, Implied, 3),
         0x49 => instruction!(Eor, Immediate, 2),
         0x4a => instruction!(Lsr, Accumulator, 2),
         0x4c => instruction!(Jmp, Absolute, 3),
         0x4d => instruction!(Eor, Absolute, 4),
         0x4e => instruction!(Lsr, Absolute, 6),
+        0x4f => instruction!(Sre, Absolute, 6),
         0x50 => instruction!(Bvc, Relative, 2),
         0x51 => instruction!(Eor, IndirectIndexed, 5, page),
+        0x53 => instruction!(Sre, IndirectIndexed, 8),
+        0x54 => instruction!(Nop, ZeroPageX, 4),
         0x55 => instruction!(Eor, ZeroPageX, 4),
         0x56 => instruction!(Lsr, ZeroPageX, 6),
+        0x57 => instruction!(Sre, ZeroPageX, 6),
         0x58 => instruction!(Cli, Implied, 2),
         0x59 => instruction!(Eor, AbsoluteY, 4, page),
+        0x5a => instruction!(Nop, Implied, 2),
+        0x5b => instruction!(Sre, AbsoluteY, 7),
+        0x5c => instruction!(Nop, AbsoluteX, 4, page),
         0x5d => instruction!(Eor, AbsoluteX, 4, page),
         0x5e => instruction!(Lsr, AbsoluteX, 7),
+        0x5f => instruction!(Sre, AbsoluteX, 7),
         0x60 => instruction!(Rts, Implied, 6),
         0x61 => instruction!(Adc, IndexedIndirect, 6),
+        0x63 => instruction!(Rra, IndexedIndirect, 8),
+        0x64 => instruction!(Nop, ZeroPage, 3),
         0x65 => instruction!(Adc, ZeroPage, 3),
         0x66 => instruction!(Ror, ZeroPage, 5),
+        0x67 => instruction!(Rra, ZeroPage, 5),
         0x68 => instruction!(Pla, Implied, 4),
         0x69 => instruction!(Adc, Immediate, 2),
         0x6a => instruction!(Ror, Accumulator, 2),
         0x6c => instruction!(Jmp, Indirect, 5),
         0x6d => instruction!(Adc, Absolute, 4),
         0x6e => instruction!(Ror, Absolute, 6),
+        0x6f => instruction!(Rra, Absolute, 6),
         0x70 => instruction!(Bvs, Relative, 2),
         0x71 => instruction!(Adc, IndirectIndexed, 5, page),
+        0x73 => instruction!(Rra, IndirectIndexed, 8),
+        0x74 => instruction!(Nop, ZeroPageX, 4),
         0x75 => instruction!(Adc, ZeroPageX, 4),
         0x76 => instruction!(Ror, ZeroPageX, 6),
+        0x77 => instruction!(Rra, ZeroPageX, 6),
         0x78 => instruction!(Sei, Implied, 2),
         0x79 => instruction!(Adc, AbsoluteY, 4, page),
+        0x7a => instruction!(Nop, Implied, 2),
+        0x7b => instruction!(Rra, AbsoluteY, 7),
+        0x7c => instruction!(Nop, AbsoluteX, 4, page),
         0x7d => instruction!(Adc, AbsoluteX, 4, page),
         0x7e => instruction!(Ror, AbsoluteX, 7),
+        0x7f => instruction!(Rra, AbsoluteX, 7),
+        0x80 => instruction!(Nop, Immediate, 2),
         0x81 => instruction!(Sta, IndexedIndirect, 6),
+        0x83 => instruction!(Sax, IndexedIndirect, 6),
         0x84 => instruction!(Sty, ZeroPage, 3),
         0x85 => instruction!(Sta, ZeroPage, 3),
         0x86 => instruction!(Stx, ZeroPage, 3),
+        0x87 => instruction!(Sax, ZeroPage, 3),
         0x88 => instruction!(Dey, Implied, 2),
         0x8a => instruction!(Txa, Implied, 2),
         0x8c => instruction!(Sty, Absolute, 4),
         0x8d => instruction!(Sta, Absolute, 4),
         0x8e => instruction!(Stx, Absolute, 4),
+        0x8f => instruction!(Sax, Absolute, 4),
         0x90 => instruction!(Bcc, Relative, 2),
         0x91 => instruction!(Sta, IndirectIndexed, 6),
         0x94 => instruction!(Sty, ZeroPageX, 4),
         0x95 => instruction!(Sta, ZeroPageX, 4),
         0x96 => instruction!(Stx, ZeroPageY, 4),
+        0x97 => instruction!(Sax, ZeroPageY, 4),
         0x98 => instruction!(Tya, Implied, 2),
         0x99 => instruction!(Sta, AbsoluteY, 5),
         0x9a => instruction!(Txs, Implied, 2),
@@ -273,64 +330,91 @@ pub const fn decode(opcode: u8) -> Option<Instruction> {
         0xa0 => instruction!(Ldy, Immediate, 2),
         0xa1 => instruction!(Lda, IndexedIndirect, 6),
         0xa2 => instruction!(Ldx, Immediate, 2),
+        0xa3 => instruction!(Lax, IndexedIndirect, 6),
         0xa4 => instruction!(Ldy, ZeroPage, 3),
         0xa5 => instruction!(Lda, ZeroPage, 3),
         0xa6 => instruction!(Ldx, ZeroPage, 3),
+        0xa7 => instruction!(Lax, ZeroPage, 3),
         0xa8 => instruction!(Tay, Implied, 2),
         0xa9 => instruction!(Lda, Immediate, 2),
         0xaa => instruction!(Tax, Implied, 2),
         0xac => instruction!(Ldy, Absolute, 4),
         0xad => instruction!(Lda, Absolute, 4),
         0xae => instruction!(Ldx, Absolute, 4),
+        0xaf => instruction!(Lax, Absolute, 4),
         0xb0 => instruction!(Bcs, Relative, 2),
         0xb1 => instruction!(Lda, IndirectIndexed, 5, page),
+        0xb3 => instruction!(Lax, IndirectIndexed, 5, page),
         0xb4 => instruction!(Ldy, ZeroPageX, 4),
         0xb5 => instruction!(Lda, ZeroPageX, 4),
         0xb6 => instruction!(Ldx, ZeroPageY, 4),
+        0xb7 => instruction!(Lax, ZeroPageY, 4),
         0xb8 => instruction!(Clv, Implied, 2),
         0xb9 => instruction!(Lda, AbsoluteY, 4, page),
         0xba => instruction!(Tsx, Implied, 2),
         0xbc => instruction!(Ldy, AbsoluteX, 4, page),
         0xbd => instruction!(Lda, AbsoluteX, 4, page),
         0xbe => instruction!(Ldx, AbsoluteY, 4, page),
+        0xbf => instruction!(Lax, AbsoluteY, 4, page),
         0xc0 => instruction!(Cpy, Immediate, 2),
         0xc1 => instruction!(Cmp, IndexedIndirect, 6),
+        0xc3 => instruction!(Dcp, IndexedIndirect, 8),
         0xc4 => instruction!(Cpy, ZeroPage, 3),
         0xc5 => instruction!(Cmp, ZeroPage, 3),
         0xc6 => instruction!(Dec, ZeroPage, 5),
+        0xc7 => instruction!(Dcp, ZeroPage, 5),
         0xc8 => instruction!(Iny, Implied, 2),
         0xc9 => instruction!(Cmp, Immediate, 2),
         0xca => instruction!(Dex, Implied, 2),
         0xcc => instruction!(Cpy, Absolute, 4),
         0xcd => instruction!(Cmp, Absolute, 4),
         0xce => instruction!(Dec, Absolute, 6),
+        0xcf => instruction!(Dcp, Absolute, 6),
         0xd0 => instruction!(Bne, Relative, 2),
         0xd1 => instruction!(Cmp, IndirectIndexed, 5, page),
+        0xd3 => instruction!(Dcp, IndirectIndexed, 8),
+        0xd4 => instruction!(Nop, ZeroPageX, 4),
         0xd5 => instruction!(Cmp, ZeroPageX, 4),
         0xd6 => instruction!(Dec, ZeroPageX, 6),
+        0xd7 => instruction!(Dcp, ZeroPageX, 6),
         0xd8 => instruction!(Cld, Implied, 2),
         0xd9 => instruction!(Cmp, AbsoluteY, 4, page),
+        0xda => instruction!(Nop, Implied, 2),
+        0xdb => instruction!(Dcp, AbsoluteY, 7),
+        0xdc => instruction!(Nop, AbsoluteX, 4, page),
         0xdd => instruction!(Cmp, AbsoluteX, 4, page),
         0xde => instruction!(Dec, AbsoluteX, 7),
+        0xdf => instruction!(Dcp, AbsoluteX, 7),
         0xe0 => instruction!(Cpx, Immediate, 2),
         0xe1 => instruction!(Sbc, IndexedIndirect, 6),
+        0xe3 => instruction!(Isc, IndexedIndirect, 8),
         0xe4 => instruction!(Cpx, ZeroPage, 3),
         0xe5 => instruction!(Sbc, ZeroPage, 3),
         0xe6 => instruction!(Inc, ZeroPage, 5),
+        0xe7 => instruction!(Isc, ZeroPage, 5),
         0xe8 => instruction!(Inx, Implied, 2),
         0xe9 => instruction!(Sbc, Immediate, 2),
         0xea => instruction!(Nop, Implied, 2),
+        0xeb => instruction!(Sbc, Immediate, 2),
         0xec => instruction!(Cpx, Absolute, 4),
         0xed => instruction!(Sbc, Absolute, 4),
         0xee => instruction!(Inc, Absolute, 6),
+        0xef => instruction!(Isc, Absolute, 6),
         0xf0 => instruction!(Beq, Relative, 2),
         0xf1 => instruction!(Sbc, IndirectIndexed, 5, page),
+        0xf3 => instruction!(Isc, IndirectIndexed, 8),
+        0xf4 => instruction!(Nop, ZeroPageX, 4),
         0xf5 => instruction!(Sbc, ZeroPageX, 4),
         0xf6 => instruction!(Inc, ZeroPageX, 6),
+        0xf7 => instruction!(Isc, ZeroPageX, 6),
         0xf8 => instruction!(Sed, Implied, 2),
         0xf9 => instruction!(Sbc, AbsoluteY, 4, page),
+        0xfa => instruction!(Nop, Implied, 2),
+        0xfb => instruction!(Isc, AbsoluteY, 7),
+        0xfc => instruction!(Nop, AbsoluteX, 4, page),
         0xfd => instruction!(Sbc, AbsoluteX, 4, page),
         0xfe => instruction!(Inc, AbsoluteX, 7),
+        0xff => instruction!(Isc, AbsoluteX, 7),
         _ => None,
     }
 }
@@ -373,9 +457,9 @@ pub struct Cpu {
     state: CpuState,
 }
 
-// Seven is the largest cycle total of any documented instruction. Branch and
-// indexed page-cross penalties never raise their instructions above this value.
-const MAX_DOCUMENTED_INSTRUCTION_CYCLES: u64 = 7;
+// Eight is the largest cycle total among the documented instructions and the
+// stable undocumented encodings exercised by the accepted nestest trace.
+const MAX_INSTRUCTION_CYCLES: u64 = 8;
 
 impl Cpu {
     #[must_use]
@@ -401,7 +485,7 @@ impl Cpu {
         if self
             .state
             .total_cycles
-            .checked_add(MAX_DOCUMENTED_INSTRUCTION_CYCLES)
+            .checked_add(MAX_INSTRUCTION_CYCLES)
             .is_none()
         {
             return Err(CpuError::CycleCounterHeadroomExhausted {
@@ -439,13 +523,13 @@ impl Cpu {
     fn execute(&mut self, bus: &mut impl Bus, instruction: Instruction) -> u8 {
         use Mnemonic::{
             Adc, And, Asl, Bcc, Bcs, Beq, Bit, Bmi, Bne, Bpl, Brk, Bvc, Bvs, Clc, Cld, Cli, Clv,
-            Cmp, Cpx, Cpy, Dec, Dex, Dey, Eor, Inc, Inx, Iny, Jmp, Jsr, Lda, Ldx, Ldy, Lsr, Nop,
-            Ora, Pha, Php, Pla, Plp, Rol, Ror, Rti, Rts, Sbc, Sec, Sed, Sei, Sta, Stx, Sty, Tax,
-            Tay, Tsx, Txa, Txs, Tya,
+            Cmp, Cpx, Cpy, Dcp, Dec, Dex, Dey, Eor, Inc, Inx, Iny, Isc, Jmp, Jsr, Lax, Lda, Ldx,
+            Ldy, Lsr, Nop, Ora, Pha, Php, Pla, Plp, Rla, Rol, Ror, Rra, Rti, Rts, Sax, Sbc, Sec,
+            Sed, Sei, Slo, Sre, Sta, Stx, Sty, Tax, Tay, Tsx, Txa, Txs, Tya,
         };
 
         match instruction.mnemonic {
-            Ora | And | Eor | Adc | Lda | Ldx | Ldy | Cmp | Cpx | Cpy | Sbc | Bit => {
+            Ora | And | Eor | Adc | Lax | Lda | Ldx | Ldy | Cmp | Cpx | Cpy | Sbc | Bit => {
                 let (value, page_crossed) = self.read_operand(bus, instruction.mode);
                 match instruction.mnemonic {
                     Ora => {
@@ -464,6 +548,11 @@ impl Cpu {
                     Sbc => self.adc(value ^ 0xff),
                     Lda => {
                         self.state.a = value;
+                        self.update_zero_negative(value);
+                    }
+                    Lax => {
+                        self.state.a = value;
+                        self.state.x = value;
                         self.update_zero_negative(value);
                     }
                     Ldx => {
@@ -486,25 +575,53 @@ impl Cpu {
                 }
                 u8::from(instruction.page_cross_cycle && page_crossed)
             }
-            Sta | Stx | Sty => {
+            Sax | Sta | Stx | Sty => {
                 let (address, _) = self.resolve_address(bus, instruction.mode);
                 let value = match instruction.mnemonic {
                     Sta => self.state.a,
                     Stx => self.state.x,
                     Sty => self.state.y,
+                    Sax => self.state.a & self.state.x,
                     _ => unreachable!(),
                 };
                 bus.write(address, value);
                 0
             }
-            Asl | Lsr | Rol | Ror | Inc | Dec => {
+            Asl | Lsr | Rol | Ror | Inc | Dec | Dcp | Isc | Slo | Rla | Sre | Rra => {
                 if instruction.mode == AddressingMode::Accumulator {
                     self.state.a = self.modify(instruction.mnemonic, self.state.a);
                 } else {
                     let (address, _) = self.resolve_address(bus, instruction.mode);
                     let value = bus.read(address);
-                    let result = self.modify(instruction.mnemonic, value);
+                    let operation = match instruction.mnemonic {
+                        Dcp => Dec,
+                        Isc => Inc,
+                        Slo => Asl,
+                        Rla => Rol,
+                        Sre => Lsr,
+                        Rra => Ror,
+                        other => other,
+                    };
+                    let result = self.modify(operation, value);
                     bus.write(address, result);
+                    match instruction.mnemonic {
+                        Dcp => self.compare(self.state.a, result),
+                        Isc => self.adc(result ^ 0xff),
+                        Slo => {
+                            self.state.a |= result;
+                            self.update_zero_negative(self.state.a);
+                        }
+                        Rla => {
+                            self.state.a &= result;
+                            self.update_zero_negative(self.state.a);
+                        }
+                        Sre => {
+                            self.state.a ^= result;
+                            self.update_zero_negative(self.state.a);
+                        }
+                        Rra => self.adc(result),
+                        _ => {}
+                    }
                 }
                 0
             }
@@ -638,7 +755,14 @@ impl Cpu {
                 self.state.sp = self.state.x;
                 0
             }
-            Nop => 0,
+            Nop => {
+                if instruction.mode == AddressingMode::Implied {
+                    0
+                } else {
+                    let (_, page_crossed) = self.read_operand(bus, instruction.mode);
+                    u8::from(instruction.page_cross_cycle && page_crossed)
+                }
+            }
         }
     }
 
@@ -945,18 +1069,30 @@ mod tests {
         )
     }
 
+    const NESTEST_UNDOCUMENTED_OPCODES: [u8; 76] = [
+        0x03, 0x04, 0x07, 0x0c, 0x0f, 0x13, 0x14, 0x17, 0x1a, 0x1b, 0x1c, 0x1f, 0x23, 0x27, 0x2f,
+        0x33, 0x34, 0x37, 0x3a, 0x3b, 0x3c, 0x3f, 0x43, 0x44, 0x47, 0x4f, 0x53, 0x54, 0x57, 0x5a,
+        0x5b, 0x5c, 0x5f, 0x63, 0x64, 0x67, 0x6f, 0x73, 0x74, 0x77, 0x7a, 0x7b, 0x7c, 0x7f, 0x80,
+        0x83, 0x87, 0x8f, 0x97, 0xa3, 0xa7, 0xaf, 0xb3, 0xb7, 0xbf, 0xc3, 0xc7, 0xcf, 0xd3, 0xd4,
+        0xd7, 0xda, 0xdb, 0xdc, 0xdf, 0xe3, 0xe7, 0xeb, 0xef, 0xf3, 0xf4, 0xf7, 0xfa, 0xfb, 0xfc,
+        0xff,
+    ];
+
     #[test]
-    fn decoder_contains_all_151_documented_opcode_encodings() {
+    fn decoder_contains_the_documented_and_nestest_undocumented_encodings() {
         assert_eq!(
             (0_u8..=u8::MAX)
                 .filter(|opcode| decode(*opcode).is_some())
                 .count(),
-            151
+            227
         );
+        for opcode in NESTEST_UNDOCUMENTED_OPCODES {
+            assert!(decode(opcode).is_some(), "missing opcode ${opcode:02X}");
+        }
     }
 
     #[test]
-    fn every_documented_opcode_executes_from_a_neutral_state() {
+    fn every_supported_opcode_executes_from_a_neutral_state() {
         for opcode in 0_u8..=u8::MAX {
             let Some(instruction) = decode(opcode) else {
                 continue;
@@ -1019,11 +1155,16 @@ mod tests {
 
         assert_eq!(covered.iter().filter(|covered| **covered).count(), 151);
         for opcode in 0_u8..=u8::MAX {
+            let expected =
+                covered[usize::from(opcode)] || NESTEST_UNDOCUMENTED_OPCODES.contains(&opcode);
             assert_eq!(
                 decode(opcode).is_some(),
-                covered[usize::from(opcode)],
-                "documented opcode-set mismatch at ${opcode:02X}"
+                expected,
+                "opcode-set mismatch at ${opcode:02X}"
             );
+            if !covered[usize::from(opcode)] {
+                continue;
+            }
             let Some(instruction) = decode(opcode) else {
                 continue;
             };
@@ -1043,6 +1184,166 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn undocumented_nops_consume_operands_and_report_page_cross_cycles() {
+        let cases = [
+            (0x04, 0x40, 0x00, 0, 2, 3),
+            (0x0c, 0x00, 0x20, 0, 3, 4),
+            (0x14, 0x40, 0x00, 1, 2, 4),
+            (0x1a, 0x00, 0x00, 0, 1, 2),
+            (0x80, 0x55, 0x00, 0, 2, 2),
+            (0x1c, 0xfe, 0x20, 1, 3, 4),
+            (0x1c, 0xff, 0x20, 1, 3, 5),
+        ];
+        for (opcode, low, high, x, bytes, cycles) in cases {
+            let mut ram = Ram::new();
+            ram.data[0x8000..0x8003].copy_from_slice(&[opcode, low, high]);
+            let mut state = CpuState::at(0x8000);
+            state.a = 0x5a;
+            state.x = x;
+            state.y = 0xa5;
+            state.status = FLAG_CARRY | FLAG_OVERFLOW | FLAG_UNUSED;
+            let mut cpu = cpu_with(state);
+            let trace = cpu.step(&mut ram).expect("undocumented NOP executes");
+            assert_eq!(trace.after.pc, 0x8000 + bytes, "opcode ${opcode:02X}");
+            assert_eq!(trace.cycles, cycles, "opcode ${opcode:02X}");
+            assert_eq!(trace.after.a, state.a, "opcode ${opcode:02X}");
+            assert_eq!(trace.after.x, state.x, "opcode ${opcode:02X}");
+            assert_eq!(trace.after.y, state.y, "opcode ${opcode:02X}");
+            assert_eq!(trace.after.status, state.status, "opcode ${opcode:02X}");
+        }
+    }
+
+    #[test]
+    fn lax_loads_both_registers_and_sax_stores_their_intersection() {
+        let mut ram = Ram::new();
+        ram.data[0x8000..0x8003].copy_from_slice(&[0xbf, 0xff, 0x20]);
+        ram.data[0x2100] = 0x80;
+        let mut state = CpuState::at(0x8000);
+        state.y = 1;
+        let mut cpu = cpu_with(state);
+        let trace = cpu.step(&mut ram).expect("LAX executes");
+        assert_eq!(trace.cycles, 5);
+        assert_eq!(trace.after.a, 0x80);
+        assert_eq!(trace.after.x, 0x80);
+        assert_ne!(trace.after.status & FLAG_NEGATIVE, 0);
+
+        ram.data[0x8000..0x8002].copy_from_slice(&[0x97, 0x40]);
+        let mut state = CpuState::at(0x8000);
+        state.a = 0xf3;
+        state.x = 0x3f;
+        state.y = 2;
+        state.status = FLAG_CARRY | FLAG_OVERFLOW | FLAG_UNUSED;
+        let mut cpu = cpu_with(state);
+        let trace = cpu.step(&mut ram).expect("SAX executes");
+        assert_eq!(trace.cycles, 4);
+        assert_eq!(ram.data[0x0042], 0x33);
+        assert_eq!(trace.after.status, state.status);
+    }
+
+    #[test]
+    fn undocumented_read_modify_write_combinations_preserve_operation_order() {
+        let cases = [
+            (0x07, 0x81, 0x01, 0, 0x02, 0x03, FLAG_CARRY),
+            (0x27, 0x80, 0xff, FLAG_CARRY, 0x01, 0x01, FLAG_CARRY),
+            (0x47, 0x03, 0x02, 0, 0x01, 0x03, FLAG_CARRY),
+            (
+                0x67,
+                0x02,
+                0x7f,
+                0,
+                0x01,
+                0x80,
+                FLAG_OVERFLOW | FLAG_NEGATIVE,
+            ),
+            (0xc7, 0x10, 0x0f, 0, 0x0f, 0x0f, FLAG_CARRY | FLAG_ZERO),
+            (0xe7, 0x0f, 0x20, FLAG_CARRY, 0x10, 0x10, FLAG_CARRY),
+        ];
+        let arithmetic_flags = FLAG_CARRY | FLAG_ZERO | FLAG_OVERFLOW | FLAG_NEGATIVE;
+        for (opcode, memory, a, status, expected_memory, expected_a, expected_flags) in cases {
+            let mut ram = Ram::new();
+            ram.data[0x8000..0x8002].copy_from_slice(&[opcode, 0x40]);
+            ram.data[0x0040] = memory;
+            let mut state = CpuState::at(0x8000);
+            state.a = a;
+            state.status = status | FLAG_UNUSED;
+            let mut cpu = cpu_with(state);
+            let trace = cpu.step(&mut ram).expect("combined operation executes");
+            assert_eq!(trace.cycles, 5, "opcode ${opcode:02X}");
+            assert_eq!(ram.data[0x0040], expected_memory, "opcode ${opcode:02X}");
+            assert_eq!(trace.after.a, expected_a, "opcode ${opcode:02X}");
+            assert_eq!(
+                trace.after.status & arithmetic_flags,
+                expected_flags,
+                "opcode ${opcode:02X}"
+            );
+        }
+    }
+
+    #[test]
+    fn undocumented_rmw_families_have_exact_modes_and_cycles() {
+        let families = [
+            (Mnemonic::Slo, [0x03, 0x07, 0x0f, 0x13, 0x17, 0x1b, 0x1f]),
+            (Mnemonic::Rla, [0x23, 0x27, 0x2f, 0x33, 0x37, 0x3b, 0x3f]),
+            (Mnemonic::Sre, [0x43, 0x47, 0x4f, 0x53, 0x57, 0x5b, 0x5f]),
+            (Mnemonic::Rra, [0x63, 0x67, 0x6f, 0x73, 0x77, 0x7b, 0x7f]),
+            (Mnemonic::Dcp, [0xc3, 0xc7, 0xcf, 0xd3, 0xd7, 0xdb, 0xdf]),
+            (Mnemonic::Isc, [0xe3, 0xe7, 0xef, 0xf3, 0xf7, 0xfb, 0xff]),
+        ];
+        let modes = [
+            AddressingMode::IndexedIndirect,
+            AddressingMode::ZeroPage,
+            AddressingMode::Absolute,
+            AddressingMode::IndirectIndexed,
+            AddressingMode::ZeroPageX,
+            AddressingMode::AbsoluteY,
+            AddressingMode::AbsoluteX,
+        ];
+        let cycles = [8, 5, 6, 8, 6, 7, 7];
+        for (mnemonic, opcodes) in families {
+            for index in 0..opcodes.len() {
+                let instruction = decode(opcodes[index]).expect("opcode decodes");
+                assert_eq!(instruction.mnemonic, mnemonic);
+                assert_eq!(instruction.mode, modes[index]);
+                assert_eq!(instruction.base_cycles, cycles[index]);
+                assert!(!instruction.page_cross_cycle);
+            }
+        }
+    }
+
+    #[test]
+    fn undocumented_sbc_immediate_alias_matches_the_documented_encoding() {
+        let mut states = Vec::new();
+        for opcode in [0xe9, 0xeb] {
+            let mut ram = Ram::new();
+            ram.data[0x8000..0x8002].copy_from_slice(&[opcode, 0x41]);
+            let mut state = CpuState::at(0x8000);
+            state.a = 0x80;
+            state.status = FLAG_CARRY | FLAG_UNUSED;
+            let mut cpu = cpu_with(state);
+            states.push(cpu.step(&mut ram).expect("SBC executes"));
+        }
+        assert_eq!(states[0].after, states[1].after);
+        assert_eq!(states[0].cycles, states[1].cycles);
+    }
+
+    #[test]
+    fn eight_cycle_instruction_requires_headroom_before_state_changes() {
+        let mut ram = Ram::new();
+        ram.data[0x8000..0x8002].copy_from_slice(&[0x03, 0x40]);
+        let before_ram = ram.data.clone();
+        let mut state = CpuState::at(0x8000);
+        state.total_cycles = u64::MAX - 7;
+        let mut cpu = cpu_with(state);
+        let before = cpu.state();
+        assert_eq!(
+            cpu.step(&mut ram),
+            Err(CpuError::CycleCounterHeadroomExhausted { remaining: 7 })
+        );
+        assert_eq!(cpu.state(), before);
+        assert_eq!(ram.data, before_ram);
     }
 
     #[test]

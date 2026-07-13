@@ -9,10 +9,10 @@ have passed unless the evidence column says so.
 | iNES/NES 2.0 parser | Generated valid/malformed tests, every truncation point, configured size limits, dirty-header rejection, and libFuzzer smoke/soak | Unit/adversarial tests pass; Windows and Linux AddressSanitizer smoke completed 10,000 runs through the checked-in launcher |
 | Shared scheduler contract | Split and single runs match; reset repeats exact output; future input wins same-timestamp ordering; combined event hash is stable | Passed by synthetic-core tests |
 | Documented 2A03 opcodes | Independently checked opcode set plus broad semantics/flags/addressing/cycle cases | A reproducible 190-vector sample from the pinned MIT `SingleStepTests/65x02` RP2A03 suite passes all 151 documented encodings, all 23 paired page-penalty profiles, and all eight branch 2/3/4-cycle profiles; the sample is not exhaustive and bus order is not checked |
-| Independent CPU trace | Strict `nestest-v1` output proves the reviewed operator pair matched 8,991 rows / 8,990 transitions for PC, A, X, Y, P, SP, and cumulative cycles through the final end-state row | Bounded parser, bus, generated comparison, SHA-256 identity enforcement, and operator-path CLI pass generated/adversarial tests; no operator pair has been run |
-| Clean-room mapper-0 integration | Project-owned NROM-128/NROM-256 programs match a pinned, independently generated architectural trace through the real parser, mapper bus, runner, and CLI | Three 47-row / 46-transition py65 traces pass with pinned hashes; the trainer case executes `$7000` and `$71FF` reads after parser slicing and preload; bus order, reset, interrupts, PPU, and strict `nestest` remain unchecked |
+| Independent CPU trace | Strict `nestest-v1` output proves the reviewed operator pair matched 8,991 rows / 8,990 transitions for PC, A, X, Y, P, SP, and cumulative cycles through the final end-state row | Passed the exact QMT CRLF pair: 8,991 rows, 8,990 transitions, final `PC=C66E`, and 26,554 cumulative cycles; after identity verification the strict CLI allows writes only to `$4004`-`$4007` and `$4015`, which are the fixture's five terminal APU-register writes, without claiming APU behavior |
+| Clean-room mapper-0 integration | Project-owned NROM-128/NROM-256 programs match a pinned, independently generated architectural trace through the real parser, mapper bus, runner, and CLI | Three 47-row / 46-transition py65 traces pass with pinned hashes; the trainer case executes `$7000` and `$71FF` reads after parser slicing and preload; bus order, reset, interrupts, and PPU remain unchecked |
 | IRQ/NMI/reset | Dedicated external suites plus focused generated tests cover stack bytes, vectors, B/U bits, masking, and edge timing | Generated instruction-level tests planned; external suite absent |
-| Unofficial opcodes | Explicit supported-encoding table and independent suite | Out of current milestone scope |
+| Unofficial opcodes | Explicit supported-encoding table and independent suite | The exact 76 stable encodings exercised by the identity-checked `nestest` trace pass; jam and hardware-sensitive unstable encodings remain unsupported |
 | Mapper 0 execution | Parsed NROM-128/NROM-256 images map PRG/CHR correctly and run CPU traces without inline re-parsing | CPU RAM/PRG mapping, trainer preload, ROM write behavior, reset vector storage, hostile memory-layout rejection, and independent clean-room CPU traces pass; reset execution and PPU-side CHR bus remain absent |
 | PPU/APU/gameplay | Headless timing/oracle suites and operator-owned compatibility matrix | Not started |
 
@@ -22,9 +22,9 @@ The first CPU crate is instruction-trace oriented. Generated tests and a pinned
 independent 190-vector sample exercise architectural state, declared memory
 effects, instruction cycle totals, page-crossing penalties, stack behavior, and
 the NMOS indirect-JMP wrap quirk across all documented encodings. The sample is
-not exhaustive. Dummy reads/writes, interrupt sampling races, DMA stalls, the
-full mapper trace, and exact bus access order remain required before PPU/APU
-integration.
+not exhaustive. The strict full mapper trace now passes, including its 76
+stable undocumented encodings. Dummy reads/writes, interrupt sampling races,
+DMA stalls, and exact bus access order remain required before PPU/APU integration.
 
 ## Fuzz commands
 

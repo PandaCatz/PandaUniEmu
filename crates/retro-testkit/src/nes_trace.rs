@@ -1,5 +1,5 @@
 use core_nes::{CartridgeError, CpuBusFault, NesCartridge, NromCpuBus};
-use cpu_6502::{Cpu, CpuError, CpuState, decode};
+use cpu_6502::{Bus, Cpu, CpuError, CpuState, decode};
 use format_ines::Region;
 use format_nestest_log::{ParseError as ReferenceParseError, ReferenceLog, ReferenceRow};
 use std::error::Error;
@@ -139,15 +139,90 @@ pub fn compare_nrom_trace_bytes(
     image: &[u8],
     reference: &[u8],
 ) -> Result<TraceSummary, TraceInputFailure> {
+    compare_nrom_trace_bytes_with_policy(image, reference, TraceIoPolicy::RejectAll)
+}
+
+/// Runs a CPU-only trace while allowing writes to the five APU register
+/// addresses used by the reviewed `nestest` V1.00 log. This function does not
+/// verify fixture identity; callers claiming `nestest-v1` acceptance must do
+/// that first. The writes are discarded without modeling APU state or behavior.
+pub fn compare_nrom_trace_bytes_with_reviewed_apu_write_allowlist(
+    image: &[u8],
+    reference: &[u8],
+) -> Result<TraceSummary, TraceInputFailure> {
+    compare_nrom_trace_bytes_with_policy(
+        image,
+        reference,
+        TraceIoPolicy::AllowReviewedNestestApuWrites,
+    )
+}
+
+fn compare_nrom_trace_bytes_with_policy(
+    image: &[u8],
+    reference: &[u8],
+    io_policy: TraceIoPolicy,
+) -> Result<TraceSummary, TraceInputFailure> {
     let parsed = format_ines::parse(image).map_err(TraceInputFailure::Image)?;
     let cartridge = NesCartridge::from_parsed(parsed).map_err(TraceInputFailure::Cartridge)?;
     let reference = format_nestest_log::parse(reference).map_err(TraceInputFailure::Reference)?;
-    compare_nrom_trace(cartridge, &reference).map_err(TraceInputFailure::Trace)
+    compare_nrom_trace_with_policy(cartridge, &reference, io_policy)
+        .map_err(TraceInputFailure::Trace)
 }
 
 pub fn compare_nrom_trace(
     cartridge: NesCartridge,
     reference: &ReferenceLog,
+) -> Result<TraceSummary, TraceFailure> {
+    compare_nrom_trace_with_policy(cartridge, reference, TraceIoPolicy::RejectAll)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TraceIoPolicy {
+    RejectAll,
+    AllowReviewedNestestApuWrites,
+}
+
+struct TraceCpuBus {
+    inner: NromCpuBus,
+    io_policy: TraceIoPolicy,
+}
+
+impl TraceCpuBus {
+    fn new(cartridge: NesCartridge, io_policy: TraceIoPolicy) -> Self {
+        Self {
+            inner: NromCpuBus::new(cartridge),
+            io_policy,
+        }
+    }
+
+    fn peek(&self, address: u16) -> Result<u8, CpuBusFault> {
+        self.inner.peek(address)
+    }
+
+    fn take_fault(&mut self) -> Option<CpuBusFault> {
+        self.inner.take_fault()
+    }
+}
+
+impl Bus for TraceCpuBus {
+    fn read(&mut self, address: u16) -> u8 {
+        self.inner.read(address)
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        if self.io_policy == TraceIoPolicy::AllowReviewedNestestApuWrites
+            && matches!(address, 0x4004..=0x4007 | 0x4015)
+        {
+            return;
+        }
+        self.inner.write(address, value);
+    }
+}
+
+fn compare_nrom_trace_with_policy(
+    cartridge: NesCartridge,
+    reference: &ReferenceLog,
+    io_policy: TraceIoPolicy,
 ) -> Result<TraceSummary, TraceFailure> {
     if cartridge.region() != Region::Ntsc {
         return Err(TraceFailure::UnsupportedRegion(cartridge.region()));
@@ -163,7 +238,7 @@ pub fn compare_nrom_trace(
             normalized: cpu.state(),
         });
     }
-    let mut bus = NromCpuBus::new(cartridge);
+    let mut bus = TraceCpuBus::new(cartridge, io_policy);
     let mut previous_expected = None;
 
     for (row_index, row) in rows.iter().enumerate() {
@@ -449,5 +524,42 @@ mod tests {
                 source: CpuBusFault::UnsupportedRead { address: 0x2000 },
             })
         );
+    }
+
+    #[test]
+    fn nestest_policy_ignores_only_reviewed_apu_writes() {
+        let image = image_with_program(&[0xa9, 0x02, 0x8d, 0x15, 0x40, 0xea]);
+        let log = b"C000 A9 02 LDA A:00 X:00 Y:00 P:24 SP:FD CYC:7\n\
+                    C002 8D 15 40 STA A:02 X:00 Y:00 P:24 SP:FD CYC:9\n\
+                    C005 EA NOP A:02 X:00 Y:00 P:24 SP:FD CYC:13";
+        assert!(matches!(
+            compare_nrom_trace_bytes(&image, log),
+            Err(TraceInputFailure::Trace(TraceFailure::Bus {
+                line: 2,
+                source: CpuBusFault::UnsupportedWrite {
+                    address: 0x4015,
+                    value: 0x02,
+                },
+            }))
+        ));
+        let summary = compare_nrom_trace_bytes_with_reviewed_apu_write_allowlist(&image, log)
+            .expect("nestest CPU-only policy accepts its APU status write");
+        assert_eq!(summary.rows_matched, 3);
+        assert_eq!(summary.transitions_verified, 2);
+
+        let other_image = image_with_program(&[0xa9, 0x02, 0x8d, 0x14, 0x40, 0xea]);
+        let other_log = b"C000 A9 02 LDA A:00 X:00 Y:00 P:24 SP:FD CYC:7\n\
+                          C002 8D 14 40 STA A:02 X:00 Y:00 P:24 SP:FD CYC:9\n\
+                          C005 EA NOP A:02 X:00 Y:00 P:24 SP:FD CYC:13";
+        assert!(matches!(
+            compare_nrom_trace_bytes_with_reviewed_apu_write_allowlist(&other_image, other_log),
+            Err(TraceInputFailure::Trace(TraceFailure::Bus {
+                line: 2,
+                source: CpuBusFault::UnsupportedWrite {
+                    address: 0x4014,
+                    value: 0x02,
+                },
+            }))
+        ));
     }
 }

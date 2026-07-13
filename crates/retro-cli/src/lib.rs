@@ -8,7 +8,7 @@ use nestest_identity::{
 };
 use retro_testkit::nes_trace::{
     MAX_NROM_IMAGE_BYTES, MAX_REFERENCE_LOG_BYTES, TraceFailure, TraceInputFailure, TraceSummary,
-    compare_nrom_trace_bytes,
+    compare_nrom_trace_bytes, compare_nrom_trace_bytes_with_reviewed_apu_write_allowlist,
 };
 use retro_testkit::run_synthetic;
 use std::ffi::{OsStr, OsString};
@@ -314,7 +314,8 @@ fn load_verify_and_compare(
 ) -> Result<VerifiedNestestRun, CommandFailure> {
     let (image, reference) = load_inputs(rom_path, log_path)?;
     let identity = verify_nestest_v1(&image, &reference).map_err(CommandFailure::Identity)?;
-    let summary = compare_nrom_trace_bytes(&image, &reference).map_err(CommandFailure::Fixture)?;
+    let summary = compare_nrom_trace_bytes_with_reviewed_apu_write_allowlist(&image, &reference)
+        .map_err(CommandFailure::Fixture)?;
     validate_nestest_summary(summary)?;
     Ok(VerifiedNestestRun { summary, identity })
 }

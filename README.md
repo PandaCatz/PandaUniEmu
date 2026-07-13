@@ -8,8 +8,10 @@ runner, and pinned MIT single-step oracle sample exist. A bounded operator-path
 trace command and reviewed `nestest`
 identity metadata also exist. The strict `nestest-v1` command cryptographically
 rejects any unreviewed fixture pair. All 151 documented encodings pass the
-curated instruction-boundary sample, but the full operator-supplied mapper trace
-has not run and playable console emulation does not exist yet.
+curated instruction-boundary sample. The reviewed operator-authorized
+`nestest` pair also passes all 8,991 rows / 8,990 transitions, including the 76
+stable undocumented encodings it exercises. Playable console emulation does
+not exist yet.
 
 Project-owned NROM-128 and NROM-256 diagnostics also pass independent pinned
 py65 architectural traces through the parser, mapper bus, runner, and real CLI.
@@ -22,7 +24,7 @@ The clean-room generator is also checked automatically from bounded raw files
 at the exact pinned py65 revision. Hostile missing, oversized, changed, and
 stale inputs are rejected, and all three cases run through a spawned release
 CLI process in the test suite. This improves reproducibility and process-boundary
-evidence; the strict external `nestest-v1` gate remains unrun.
+evidence. The separate strict external `nestest-v1` gate now passes.
 
 This project targets a native Rust application with independently testable NES,
 Game Boy Advance, Sega Genesis / Mega Drive, and SNES cores behind one frontend.

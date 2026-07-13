@@ -6,9 +6,11 @@ instruction-oriented CPU, mapper-0 CPU bus, hostile reference-log parser, and
 generated trace runner. A reproducible sample from the pinned MIT RP2A03
 single-step suite covers all 151 documented encodings. The bounded operator-path
 CLI and exact external-fixture identity are documented and enforced by SHA-256
-before parsing. Project-owned NROM-128/NROM-256 diagnostics, including a
+before parsing. The reviewed `nestest` pair passes 8,991 rows / 8,990
+transitions, including its 76 stable undocumented encodings. Project-owned NROM-128/NROM-256 diagnostics, including a
 trainer-bearing case, pass pinned py65 architectural traces through the real
-mapper and CLI; the operator-supplied full mapper trace remains open. The host frontend
+mapper and CLI. Interrupt sampling and per-cycle bus order are the next CPU
+gate. The host frontend
 intentionally follows the verified headless NES path. See `CLAUDE.md` for
 evidence and exact next tasks.
 

@@ -30,6 +30,13 @@ slice on top of the completed Phase 1 headless foundation.
 
 ## Current state
 
+The operator-authorized Kevin Horton `nestest` V1.00 pair is stored locally at
+the ignored paths `external-fixtures/nestest.nes` and
+`external-fixtures/nestest.log`. Both files match the reviewed byte counts and
+SHA-256 identities in `docs/compatibility/NESTEST_PROVENANCE.md`; neither file
+may be committed or published. The strict release run passes all 8,991 rows and
+8,990 transitions, ending at `PC=C66E` after 26,554 cumulative CPU cycles.
+
 The workspace contains seven functional crates:
 
 - `retro-core`: shared deterministic contracts and typed output/input metadata.
@@ -38,13 +45,16 @@ The workspace contains seven functional crates:
 - `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, and a
   minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults.
 - `retro-testkit`: deterministic synthetic core, capture hashes, generated
-  mapper-0 trace comparison, and pinned clean-room NROM-128/NROM-256 cases.
+  mapper-0 trace comparison, the `nestest` CPU-only I/O policy selected by the
+  strict CLI after fixture identity verification, and pinned clean-room
+  NROM-128/NROM-256 cases.
 - `retro-cli`: headless synthetic smoke executable plus bounded, sanitized
   operator-path NROM/reference-trace commands. `nestest-v1` enforces the exact
   reviewed fixture size/hash matrix before parsing.
-- `cpu-6502`: trace-first documented 2A03 instruction layer with explicit
-  addressing, flags, cycle totals, stack/control flow, decode metadata, and a
-  pinned MIT single-step oracle sample.
+- `cpu-6502`: trace-first 2A03 instruction layer with all 151 documented and the
+  76 stable undocumented encodings exercised by `nestest`, explicit addressing,
+  flags, cycle totals, stack/control flow, decode metadata, and a pinned MIT
+  documented-opcode single-step oracle sample.
 
 The fuzz project calls both format parsers with arbitrary bytes. The checked-in
 launcher generates redistribution-safe seeds and handles the Windows
@@ -85,6 +95,17 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   SHA-256 identity checks precede parsing, generic output says
   `fixture_identity=unchecked`, and strict success requires 8,991 rows / 8,990
   transitions.
+- Ran the exact reviewed QMT pair through the release strict path. All 8,991
+  rows / 8,990 transitions match through mapper 0, with final `PC=C66E`,
+  `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`, and 26,554 cumulative cycles.
+- Added the exact 76 stable undocumented encodings exercised by the accepted
+  trace: NOP aliases, LAX, SAX, DCP, ISC, SLO, RLA, SRE, RRA, and `$EB` SBC.
+  Focused tests cover metadata, operand consumption, page cycles, combined
+  operation/flag order, and failure-atomic eight-cycle headroom.
+- Kept missing-device behavior explicit: after verifying both exact fixture
+  identities, the strict CLI selects a CPU-trace allowlist for writes to
+  `$4004`-`$4007` and `$4015`. The reviewed log makes exactly five terminal
+  writes to those addresses; the normal NROM bus still faults unimplemented I/O.
 - Added RustCrypto `sha2` 0.11.0 to the CLI runtime and testkit development
   tests, with default features disabled. The reviewed lockfile contains its
   small Rust dependency graph; the crate is MIT OR Apache-2.0 and requires
@@ -119,6 +140,7 @@ Run from `H:\claaaude\universal-retro-emulator`:
 
 ```powershell
 python tools/check-cleanroom-nrom.py
+cargo run --release -p retro-cli -- nestest-v1 external-fixtures\nestest.nes external-fixtures\nestest.log
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
@@ -141,8 +163,8 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 69 passed, 0 failed.
-- Release tests: 69 passed, 0 failed; doc tests passed.
+- Debug tests: 76 passed, 0 failed.
+- Release tests: 76 passed, 0 failed; doc tests passed.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -150,6 +172,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Release CLI: final tick `30`; video `3` frames, hash `2d1f1e3d37030229`;
   audio `7` packets / `28` frames, hash `b2bdf29fe8dd6d45`; ordered event hash
   `2343096cdf497a5e`.
+- Strict `nestest-v1`: the exact reviewed QMT pair matched 8,991 rows / 8,990
+  transitions with final `PC=C66E`, `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`,
+  and 26,554 cumulative cycles. All 76 stable undocumented encodings exercised
+  by the fixture passed.
 - Mapper-0 bus/reference-runner checkpoint
   `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
   `29254844214` passed all four jobs: stable tests and both 10,000-run parser
@@ -162,9 +188,9 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   `8bfdec36fc866a2f1c3b37d88e304a7e7ef96e10` is published. GitHub Actions run
   `29259546369` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu
   24.04. It passed fresh adversarial review with no actionable P0-P2 findings
-  and a deletion-safe 43-file publisher preview. Its accepted-fixture path
-  remains unrun because committing or downloading the unlicensed fixtures is
-  prohibited.
+  and a deletion-safe 43-file publisher preview. At that checkpoint its
+  accepted-fixture path was unrun; the later operator-authorized local run is
+  recorded above without publishing either fixture.
 - Independent single-step-oracle checkpoint
   `e5f3a4d73738e908b0c2d2fce8c372182a9141fc` is published. It passes all 190
   pinned vectors and a
@@ -232,18 +258,13 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 
 ## Next tasks, in order
 
-1. Obtain an operator-supplied ROM/log matching a reviewed identity in
-   `docs/compatibility/NESTEST_PROVENANCE.md` and run `nestest-v1` without
-   committing either fixture; the command now validates and reports the hashes.
-2. Fix every observed architectural-state or cycle divergence and rerun the
-   complete external trace until it passes.
-3. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the
+1. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the
    missing interrupt sampling and per-cycle behavior.
-4. Add the first master-clock scheduler and dot-timed PPU oracle.
-5. Reach a deterministic headless NROM video/audio checkpoint.
-6. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
+2. Add the first master-clock scheduler and dot-timed PPU oracle.
+3. Reach a deterministic headless NROM video/audio checkpoint.
+4. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
    mirroring, reset, and PRG RAM, for the supplied mapper-1 target.
-7. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
+5. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
 
 ## Decisions still open
 
@@ -269,9 +290,9 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 
 The synthetic core proves only the shared contract/headless capture path. The
 CPU now has independent instruction-boundary samples across all documented
-encodings, but the sample is not exhaustive, the mapper-0 full trace has not
-run, and the CPU is not bus-cycle accurate. The clean-room NROM cases strengthen
-mapper-0 integration evidence but leave reset, interrupts, bus order, PPU/APU,
-and strict `nestest` unchecked. PPU/APU/I/O are intentionally
-faulted rather than simulated. Mapper 1 is not implemented. This is not a
-playable NES emulator.
+encodings and passes the full mapper-0 `nestest` architectural trace, including
+its 76 stable undocumented encodings. The sample is not exhaustive and the CPU
+is not bus-cycle accurate. Reset execution, interrupts, bus order, DMA,
+PPU/APU, and gameplay remain unchecked. PPU/APU/I/O are intentionally faulted
+rather than simulated outside the strict CLI's reviewed trace-write allowlist.
+Mapper 1 is not implemented. This is not a playable NES emulator.

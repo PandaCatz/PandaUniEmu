@@ -5,17 +5,37 @@ Last updated: 2026-07-13
 ## Current phase
 
 The Phase 1 headless foundation is implemented. The Phase 2 NTSC NES vertical
-slice is at the independent CPU-trace boundary. Seven functional workspace
-crates exist. The mapper-0 CPU bus and a generated trace runner now work, but no
-operator-supplied `nestest` pair has been run. A pinned MIT single-step sample
-now provides independent instruction-boundary evidence across all 151
-documented encodings. Project-owned NROM-128/NROM-256 diagnostics also match
+slice has passed the independent CPU trace and is now at the interrupt and
+per-cycle bus-order boundary. Seven functional workspace crates exist. The
+reviewed QMT `nestest` pair passes 8,991 rows / 8,990
+transitions through the mapper-0 CPU bus, including the exact 76 stable
+undocumented encodings it exercises. A pinned MIT single-step sample provides
+independent instruction-boundary evidence across all 151 documented encodings.
+Project-owned NROM-128/NROM-256 diagnostics also match
 pinned py65 architectural traces through the mapper and CLI, including a
 trainer-bearing NROM-128 case that reads both preload endpoints. There is no
 PPU/APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
+
+- Obtained the operator-authorized pair from the author-hosted source into the
+  ignored `external-fixtures/` boundary and verified both reviewed sizes and
+  SHA-256 identities before parsing. Neither file is allowlisted for publishing.
+- Fixed the first real trace boundary by implementing the exact 76 stable
+  undocumented encodings exercised by the fixture, including operand-consuming
+  NOP aliases, LAX/SAX, six combined RMW families, the `$EB` SBC alias, exact
+  page policies, and failure-atomic eight-cycle headroom.
+- Added focused tests for decode-set identity, NOP lengths/page cycles, LAX/SAX,
+  combined operation and flag order, RMW mode/cycle matrices, the SBC alias,
+  and eight-cycle overflow protection.
+- After verifying both exact fixture identities, the strict CLI selects a
+  CPU-only allowlist for writes to `$4004`-`$4007` and `$4015`. The reviewed log
+  makes exactly five terminal writes to those addresses. The normal NROM bus
+  still rejects unimplemented I/O, and a focused test proves `$4014` remains a
+  fault under the special policy.
+- The release strict path passes all 8,991 rows / 8,990 transitions, ending at
+  `PC=C66E`, `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`, and 26,554 cycles.
 
 - Automated clean-room evidence regeneration without committing upstream files:
   a bounded downloader fetches only the py65 license and six executed source
@@ -130,12 +150,16 @@ nightly-2026-07-12 on 2026-07-13:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 69 passed, 0 failed.
-- Release tests: 69 passed, 0 failed; doc tests passed.
+- Debug tests: 76 passed, 0 failed.
+- Release tests: 76 passed, 0 failed; doc tests passed.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash
   `b2bdf29fe8dd6d45`, and event hash `2343096cdf497a5e`.
+- The strict release `nestest-v1` command matched all 8,991 rows / 8,990
+  transitions of the exact reviewed QMT pair, including all 76 stable
+  undocumented encodings used by the fixture. It ended at `PC=C66E`, `A=00`,
+  `X=FF`, `Y=15`, `P=27`, `SP=FD`, and 26,554 cumulative cycles.
 - The release CLI help path and generated operator-file path were exercised; the
   latter is also covered by unit tests because no external fixture is present.
 - The release binary matched a three-row generated trace and returned status `1`
@@ -228,27 +252,28 @@ Ubuntu 24.04.
 - `format-nestest-log` has no CPU, NES runtime, Bevy, or frontend dependency.
 - Unimplemented NES I/O records an explicit bus fault. Returning deterministic
   latched data is only a way to finish the current CPU call safely, not a claim
-  that the device access is supported.
+  that the device access is supported. The only exception is the
+  strict CLI's reviewed CPU-trace write allowlist. The verified log's five
+  terminal APU writes are discarded without modeling APU state.
 - The runner uses the first reference row's raw cycle convention and never
   renormalizes later rows.
 - The current milestone remains instruction-oriented, not bus-cycle accurate.
 - The clean-room NROM cases are independent mapper-0 architectural evidence,
   not evidence for reset timing, interrupts, bus order, PPU/APU behavior, MMC1,
-  gameplay, or the strict `nestest-v1` acceptance gate.
+  or gameplay.
 - The pinned MIT single-step sample is independent architectural evidence, not
-  a replacement for the full mapper-0 `nestest` trace.
+  exhaustive state coverage. The strict full mapper-0 `nestest` trace is now a
+  separate passing oracle.
 - The supplied mapper-1 image is a future MMC1 compatibility target. Accepting
   it before serial banking, CHR/nametable routing, PPU/APU, and mapper tests
   would be a false compatibility claim.
 
 ## Next action
 
-Obtain an operator-supplied pair matching a reviewed identity in
-`compatibility/NESTEST_PROVENANCE.md`, record local hashes under the ignored
-`external-fixtures/` directory, and run `nestest-v1`. Fix every divergence before
-moving to interrupt or PPU work. The strict accepted-fixture path cannot be
-verified until those operator files exist. After the mapper-0 whole-machine
-gate, implement and verify MMC1 for the supplied operator target.
+Add focused IRQ, NMI, reset, and bus-access-order tests, then implement missing
+interrupt sampling and per-cycle behavior. Do not start scheduler/PPU work
+until that gate passes. After the mapper-0 whole-machine video/audio gate,
+implement and verify MMC1 for the supplied operator target.
 
 ## Open decisions
 
