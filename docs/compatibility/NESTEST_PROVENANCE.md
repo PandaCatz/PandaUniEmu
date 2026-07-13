@@ -38,6 +38,19 @@ The two log files contain the same 8,991 logical rows and differ by line
 endings. Normalizing the QMT log to LF produces the pinned-log SHA-256 above.
 Do not normalize the operator file before recording its original hash.
 
+## Executable identity contract
+
+`retro-cli nestest-v1` checks raw bytes before either parser runs. It accepts
+only the 24,592-byte ROM hash above paired with exactly one of the two recorded
+log size/hash combinations. It does not normalize line endings or accept an
+equivalent re-encoding, BOM, edited final newline, or other parsed-row
+equivalence. A strict success also requires exactly 8,991 matched rows and 8,990
+verified transitions.
+
+The generic `nes-trace` command intentionally accepts generated and development
+fixtures. Its output includes `fixture_identity=unchecked` and is never
+independent acceptance evidence.
+
 ## Redistribution decision
 
 No explicit license grant was found in the author documentation, the archival

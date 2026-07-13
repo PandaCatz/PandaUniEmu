@@ -37,7 +37,8 @@ The workspace contains seven functional crates:
 - `retro-testkit`: deterministic synthetic core, capture hashes, and generated
   mapper-0 CPU reference-trace comparison.
 - `retro-cli`: headless synthetic smoke executable plus bounded, sanitized
-  operator-path NROM/reference-trace command.
+  operator-path NROM/reference-trace commands. `nestest-v1` enforces the exact
+  reviewed fixture size/hash matrix before parsing.
 - `cpu-6502`: trace-first documented 2A03 instruction layer with explicit
   addressing, flags, cycle totals, stack/control flow, and decode metadata.
 
@@ -71,6 +72,13 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 - Added `retro-cli nes-trace <ROM_PATH> <LOG_PATH>` with bounded reads,
   path/content-safe diagnostics, stable exit statuses, and generated real-file
   boundary tests.
+- Added strict `retro-cli nestest-v1 <ROM_PATH> <LOG_PATH>` acceptance:
+  SHA-256 identity checks precede parsing, generic output says
+  `fixture_identity=unchecked`, and strict success requires 8,991 rows / 8,990
+  transitions.
+- Added RustCrypto `sha2` 0.11.0 only to the CLI with default features disabled.
+  The reviewed lockfile contains its small Rust dependency graph; the crate is
+  MIT OR Apache-2.0 and requires Rust 1.85.
 - Published the verified foundation as commit
   `b7c3182a8672db0bed814951cd9d959fa8eb8f7a` and its handoff update as commit
   `4515511c154c1e5fe39a45c750bda45a71569ed3`.
@@ -106,8 +114,8 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 58 passed, 0 failed.
-- Release tests: 58 passed, 0 failed; doc tests passed.
+- Debug tests: 65 passed, 0 failed.
+- Release tests: 65 passed, 0 failed; doc tests passed.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -123,12 +131,17 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   `cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f` is published. GitHub Actions run
   `29257679328` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu
   24.04. No external fixture was found or run.
+- The strict identity-enforcement milestone is locally verified and passed a
+  fresh adversarial review with no actionable P0-P2 findings and a deletion-safe
+  43-file publisher preview, but is not yet published. Its accepted-fixture path
+  remains unrun because committing or downloading the unlicensed fixtures is
+  prohibited.
 
 ## Next tasks, in order
 
 1. Obtain an operator-supplied ROM/log matching a reviewed identity in
-   `docs/compatibility/NESTEST_PROVENANCE.md`, record local hashes in the ignored
-   run record, and run the new CLI without committing either fixture.
+   `docs/compatibility/NESTEST_PROVENANCE.md` and run `nestest-v1` without
+   committing either fixture; the command now validates and reports the hashes.
 2. Fix every observed architectural-state or cycle divergence and rerun the
    complete external trace until it passes.
 3. Add focused IRQ, NMI, reset, and bus-access-order tests, then implement the

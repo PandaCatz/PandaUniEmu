@@ -54,15 +54,21 @@ implemented in the log parser, not hidden in the CPU comparison.
 ## Local command
 
 ```powershell
-cargo run --release -p retro-cli -- nes-trace <ROM_PATH> <LOG_PATH>
+cargo run --release -p retro-cli -- nestest-v1 <ROM_PATH> <LOG_PATH>
 ```
 
 The CLI reads at most 41,488 bytes for the supported NROM image and 4 MiB for the
 log. It accepts OS-native paths but never prints either path or raw log rows.
-Success prints a single `nes-trace-v1` summary. A mismatch prints only sanitized
-architectural state for the first divergence.
+Identity is checked against `NESTEST_PROVENANCE.md` before parsing. Success
+prints one `nestest-v1` line with the reviewed fixture ID, hashes, log variant,
+byte counts, 8,991 matched rows, 8,990 transitions, and final architectural
+state. A mismatch prints only sanitized architectural context for the first
+divergence. The generic `nes-trace` command prints
+`fixture_identity=unchecked` and must not be cited as acceptance evidence.
 
-Exit statuses are stable: `0` pass, `1` CPU/bus/trace divergence, `2` invalid
-arguments, `3` unreadable or oversized input, and `4` malformed or unsupported
-fixture data. The no-argument command remains the deterministic synthetic smoke
-run used by CI.
+Exit statuses are stable: `0` verified pass, `1` CPU/bus/trace divergence or an
+impossible strict-summary invariant, `2` invalid arguments, `3` unreadable or
+oversized input, `4` identity-approved bytes rejected as malformed/unsupported,
+and `5` raw bytes outside the reviewed identity matrix. Identity failures omit
+observed hashes, sizes, paths, and contents. The no-argument command remains the
+deterministic synthetic smoke run used by CI.

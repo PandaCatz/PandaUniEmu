@@ -3,9 +3,9 @@
 This is the execution order for turning the plan into code. The shared contract,
 iNES parser, NES cartridge boundary, testkit, CLI, parser fuzz targets,
 trace-first CPU layer, mapper-0 CPU bus, generated trace runner, and bounded
-operator-path trace command now exist. Independent CPU-oracle verification,
-PPU/APU/runtime scheduling, and the frontend remain work, not claims of
-implementation.
+operator-path trace commands now exist. The strict command enforces the reviewed
+fixture identity and expected summary shape. Independent CPU-oracle execution,
+PPU/APU/runtime scheduling, and the frontend remain work, not claims of implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -159,7 +159,8 @@ result, and date. Performance gates use release builds and measured budgets.
 4. Completed: connect a minimal mapper-0 CPU bus and implement a defensive,
    independently fuzzed reference-log parser plus generated trace runner.
 5. Completed: pin the intended `nestest` V1.00 distribution identity, record its
-   unresolved redistribution status, and add a bounded sanitized local CLI.
+   unresolved redistribution status, and add bounded generic/strict local CLI
+   paths with SHA-256 identity enforcement.
 6. Match against an operator-supplied `nestest` oracle and close every declared
    semantic/cycle divergence.
 7. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,

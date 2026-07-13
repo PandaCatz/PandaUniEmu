@@ -35,12 +35,23 @@ machine, host frontend, or playable emulation.
   statuses, and generated real-filesystem boundary tests.
 - Added a byte-oriented testkit entry point that parses each boundary once and
   preserves image, cartridge, log, and trace failure layers.
+- Added a strict `nestest-v1` CLI profile that checks raw size/SHA-256 identity
+  before parsing, accepts only the QMT CRLF or pinned LF log paired with the
+  reviewed ROM, and requires 8,991 rows / 8,990 transitions for success.
+- Marked generic `nes-trace` output as `fixture_identity=unchecked`; it remains a
+  development harness and cannot be cited as independent acceptance evidence.
+- Added RustCrypto `sha2` 0.11.0 to `retro-cli` only, with default features
+  disabled. Its MIT/Apache-2.0 licensing, Rust 1.85 MSRV, old inapplicable
+  advisory, resolved dependency tree, and lockfile were reviewed.
 
 The mapper-bus/reference-runner checkpoint passed fresh adversarial review, a
 deletion-safe 39-file publisher preview, and the Windows/Linux CI matrix. The
 new provenance/operator-CLI changes passed fresh adversarial review after all
 three P2 findings were fixed. The deletion-safe 42-file publisher preview and
-the Windows/Linux GitHub Actions matrix also passed.
+the Windows/Linux GitHub Actions matrix also passed. The strict identity changes
+are locally verified, passed fresh adversarial review with no actionable P0-P2
+findings, and passed a deletion-safe 43-file publisher preview; the GitHub
+checkpoint and CI remain pending.
 
 ## Verification performed
 
@@ -50,8 +61,8 @@ nightly-2026-07-12 on 2026-07-13:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 58 passed, 0 failed.
-- Release tests: 58 passed, 0 failed; doc tests passed.
+- Debug tests: 65 passed, 0 failed.
+- Release tests: 65 passed, 0 failed; doc tests passed.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash
@@ -60,6 +71,8 @@ nightly-2026-07-12 on 2026-07-13:
   latter is also covered by unit tests because no external fixture is present.
 - The release binary matched a three-row generated trace and returned status `1`
   for an unsupported opcode on a one-row final sentinel, without printing paths.
+- The release `nestest-v1` command rejected a same-size generated ROM with status
+  `5` before parsing and did not expose the operator paths or hostile log marker.
 
 Mapper-0 bus/reference-runner checkpoint
 `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
@@ -77,6 +90,9 @@ Ubuntu 24.04.
   uncommitted; only source metadata, hashes, and sanitized results may be stored.
 - The reviewed public `nestest` distribution has no located explicit license;
   public availability is not treated as permission to redistribute it.
+- Only strict `nestest-v1` output can satisfy the independent trace gate. Generic
+  `nes-trace-v1 fixture_identity=unchecked` output is generated/development
+  evidence regardless of row count.
 - `format-nestest-log` has no CPU, NES runtime, Bevy, or frontend dependency.
 - Unimplemented NES I/O records an explicit bus fault. Returning deterministic
   latched data is only a way to finish the current CPU call safely, not a claim
@@ -89,8 +105,9 @@ Ubuntu 24.04.
 
 Obtain an operator-supplied pair matching a reviewed identity in
 `compatibility/NESTEST_PROVENANCE.md`, record local hashes under the ignored
-`external-fixtures/` directory, and run the new CLI. Fix every divergence before
-moving to interrupt or PPU work. Generated tests are not independent proof.
+`external-fixtures/` directory, and run `nestest-v1`. Fix every divergence before
+moving to interrupt or PPU work. The strict accepted-fixture path cannot be
+verified until those operator files exist; generated tests are not independent proof.
 
 ## Open decisions
 
