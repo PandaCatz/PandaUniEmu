@@ -39,8 +39,8 @@ machine, host frontend, or playable emulation.
 The mapper-bus/reference-runner checkpoint passed fresh adversarial review, a
 deletion-safe 39-file publisher preview, and the Windows/Linux CI matrix. The
 new provenance/operator-CLI changes passed fresh adversarial review after all
-three P2 findings were fixed. The deletion-safe 42-file publisher preview also
-passed; GitHub checkpoint and CI are still pending.
+three P2 findings were fixed. The deletion-safe 42-file publisher preview and
+the Windows/Linux GitHub Actions matrix also passed.
 
 ## Verification performed
 
@@ -65,6 +65,11 @@ Mapper-0 bus/reference-runner checkpoint
 `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
 `29254844214` passed stable tests and both 10,000-run parser ASan fuzz targets on
 Windows 2025 and Ubuntu 24.04.
+
+Provenance/operator-CLI checkpoint
+`cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f` is published. GitHub Actions run
+`29257679328` passed the same four-job stable/fuzz matrix on Windows 2025 and
+Ubuntu 24.04.
 
 ## Key decisions
 

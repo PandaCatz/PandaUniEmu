@@ -76,6 +76,8 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   `4515511c154c1e5fe39a45c750bda45a71569ed3`.
 - Published the mapper-0 bus/reference-runner checkpoint as commit
   `505a73c02d69f309cad37d7c85e7520d7e5ab6b6`.
+- Published the provenance/operator-CLI checkpoint as commit
+  `cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f`.
 
 ## Required commands
 
@@ -117,8 +119,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
   `505a73c02d69f309cad37d7c85e7520d7e5ab6b6` is published. GitHub Actions run
   `29254844214` passed all four jobs: stable tests and both 10,000-run parser
   ASan fuzz targets on Windows 2025 and Ubuntu 24.04.
-- The provenance/operator-CLI milestone is locally verified but not yet
-  published. No external fixture was found or run.
+- Provenance/operator-CLI checkpoint
+  `cb4e2de00bb843bef37fa5ef0dc1dc8c08b6a27f` is published. GitHub Actions run
+  `29257679328` passed all four stable/fuzz jobs on Windows 2025 and Ubuntu
+  24.04. No external fixture was found or run.
 
 ## Next tasks, in order
 
