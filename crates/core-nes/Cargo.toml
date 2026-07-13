@@ -1,0 +1,13 @@
+[package]
+name = "core-nes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+format-ines = { path = "../format-ines" }
+
+[lints]
+workspace = true
+

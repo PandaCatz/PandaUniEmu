@@ -1,0 +1,13 @@
+[package]
+name = "retro-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+retro-core = { path = "../retro-core" }
+
+[lints]
+workspace = true
+

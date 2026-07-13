@@ -1,0 +1,20 @@
+/target/
+/external-fixtures/
+
+# Operator-owned game and firmware data must never be committed.
+*.nes
+*.sfc
+*.smc
+*.gba
+*.md
+*.gen
+*.bin
+*.rom
+
+# Keep project documentation despite the Genesis .md extension collision.
+!README.md
+!ROADMAP.md
+!BUILD_PATH.md
+!CLAUDE.md
+!docs/**/*.md
+
