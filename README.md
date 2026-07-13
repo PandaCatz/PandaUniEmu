@@ -1,92 +1,222 @@
-# Universal Retro Emulator
+# PandaUniEmu
 
-Status: the Phase 1 headless foundation is implemented and the NES vertical
-slice is in progress. Shared contracts, a defensive NES image parser, the
-parsed-cartridge boundary, synthetic test core, headless CLI, parser fuzzing,
-a trace-first 2A03 CPU layer, mapper-0 CPU bus, generated reference-trace
-runner, and pinned MIT single-step oracle sample exist. A bounded operator-path
-trace command and reviewed `nestest`
-identity metadata also exist. The strict `nestest-v1` command cryptographically
-rejects any unreviewed fixture pair. All 151 documented encodings pass the
-curated instruction-boundary sample. The reviewed operator-authorized
-`nestest` pair also passes all 8,991 rows / 8,990 transitions, including the 76
-stable undocumented encodings it exercises. Playable console emulation does
-not exist yet.
+**A deterministic, evidence-first universal retro-emulator project written in
+Rust.** PandaUniEmu is the working repository name; the long-term goal is one
+native frontend backed by independently testable NES, Game Boy Advance, Sega
+Genesis / Mega Drive, and SNES cores.
 
-Project-owned NROM-128 and NROM-256 diagnostics also pass independent pinned
-py65 architectural traces through the parser, mapper bus, runner, and real CLI.
-A third NROM-128 case executes reads from both ends of a 512-byte trainer,
-covering parser offset and PRG-RAM preload integration. This is mapper-0
-evidence, not proof of reset timing, bus-cycle order, PPU/APU behavior, MMC1
-support, or gameplay.
+[![CI](https://github.com/PandaCatz/PandaUniEmu/actions/workflows/ci.yml/badge.svg)](https://github.com/PandaCatz/PandaUniEmu/actions/workflows/ci.yml)
+![Rust 1.96](https://img.shields.io/badge/Rust-1.96-orange?logo=rust)
+[![GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
+![AI-assisted](https://img.shields.io/badge/development-AI--assisted-8A2BE2)
 
-The clean-room generator is also checked automatically from bounded raw files
-at the exact pinned py65 revision. Hostile missing, oversized, changed, and
-stale inputs are rejected, and all three cases run through a spawned release
-CLI process in the test suite. This improves reproducibility and process-boundary
-evidence. The separate strict external `nestest-v1` gate now passes.
+> [!IMPORTANT]
+> PandaUniEmu is a research-stage, headless emulator foundation. The NES CPU
+> and mapper-0 trace checkpoints are real and verified, but PPU, APU, input
+> hardware, complete-machine scheduling, and the graphical frontend are not yet
+> implemented. CPU verification is architectural and instruction-boundary
+> based; it is not bus-cycle accurate. The project does not currently play
+> games.
 
-This project targets a native Rust application with independently testable NES,
-Game Boy Advance, Sega Genesis / Mega Drive, and SNES cores behind one frontend.
-The first shippable target is deliberately smaller: a verified NES vertical slice
-that loads a user-supplied NROM image, runs deterministically, and produces
-measurable video and audio output.
+## Current status
 
-## Project documents
+| Area | Status | Evidence |
+|---|---|---|
+| Shared deterministic contracts | Complete | Split/single runs, reset, timed input, and capture hashes are tested |
+| Defensive NES image parsing | Complete for the current boundary | iNES/NES 2.0 validation, truncation/oversize tests, and parser fuzzing |
+| NES 2A03 CPU architecture | Verified checkpoint | All 151 documented encodings pass a pinned 190-vector MIT oracle sample |
+| Stable undocumented CPU encodings | Verified checkpoint | The exact 76 encodings exercised by `nestest` pass |
+| Independent full CPU trace | Passed | 8,991 rows / 8,990 transitions, final `PC=C66E`, 26,554 cycles |
+| Mapper 0 CPU integration | Verified checkpoint | NROM-128, NROM-256, PRG RAM, trainer preload, and clean-room traces |
+| Quality gates | Passing | 76 debug tests, 76 release tests, doc tests, warnings-denied Clippy, and parser fuzzing |
+| PPU, APU, input, DMA, interrupts | Not implemented | Next active NES milestones |
+| Native frontend | Not implemented | Intentionally deferred until the headless NES core is verified |
+| GBA, Genesis / Mega Drive, SNES | Planned | No implementation claims yet |
 
-- [ROADMAP.md](ROADMAP.md) defines phases, exit criteria, and realistic effort.
-- [BUILD_PATH.md](BUILD_PATH.md) defines the proposed workspace layout and the
-  exact order in which to create it.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) records the corrected design.
-- [docs/PROPOSAL_REVIEW.md](docs/PROPOSAL_REVIEW.md) lists corrections to the
-  original proposal.
-- [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) is the living handoff for future
-  sessions.
-- [docs/compatibility/NESTEST_PROVENANCE.md](docs/compatibility/NESTEST_PROVENANCE.md)
-  pins the intended external CPU oracle without redistributing it.
-- [docs/compatibility/CLEANROOM_NROM_PROVENANCE.md](docs/compatibility/CLEANROOM_NROM_PROVENANCE.md)
-  records the reproducible project-owned mapper-0 diagnostic evidence.
-- [CLAUDE.md](CLAUDE.md) is the concise agent handoff: completed work, verified
-  commands, current limitations, and the exact next-task order.
+The latest verified implementation checkpoint is
+[`7f1e20f`](https://github.com/PandaCatz/PandaUniEmu/commit/7f1e20f07a93c432fb0639ea8630474c4e9e26b7).
+Its six-job Windows/Ubuntu CI matrix passed tests, clean-room regeneration, and
+both 10,000-run parser fuzz jobs.
 
-## Fixed scope
+## Why this project is different
 
-- First-party cores: NES, GBA, Genesis / Mega Drive, and SNES.
-- Desktop targets first: Windows and Linux.
-- User-supplied ROMs and firmware only; no copyrighted game, firmware, audio,
-  graphics, or test-ROM bytes belong in this repository.
-- Accuracy before convenience features. Save states, rewind, shaders, library
-  browsing, and netplay do not precede a correct NES vertical slice.
-- `wgpu` + `winit` is the current presentation direction. Bevy is not required
-  for cycle-accurate emulation and will only be considered later for product UI
-  if it proves useful.
+- **Deterministic by design.** Core simulation advances in exact emulated time;
+  it does not depend on wall-clock sleeps, VSync, or host-device timing.
+- **Parsers are isolated trust boundaries.** Format crates accept hostile bytes
+  and return validated structures without depending on runtime or frontend code.
+- **Evidence before compatibility claims.** Independent traces, pinned vectors,
+  generated clean-room cases, fuzzing, and warnings-denied builds define each
+  checkpoint.
+- **One frontend, separate machines.** Console cores share host contracts—not
+  buses, clocks, pixel formats, controllers, or save-state layouts.
+- **Failure is explicit.** Missing devices, unsupported mappers, and malformed
+  inputs return structured errors instead of silently pretending to work.
+
+## Build path
+
+- [x] Freeze the architecture, legal policy, evidence rules, and Rust toolchain.
+- [x] Build deterministic shared contracts, a synthetic core, capture hashing,
+  and a real headless CLI.
+- [x] Add defensive iNES/NES 2.0 and reference-log parser boundaries with fuzz
+  targets.
+- [x] Implement and independently sample all 151 documented 2A03 opcode
+  encodings.
+- [x] Implement mapper-0 CPU addressing, PRG RAM, trainer preload, and
+  clean-room NROM integration traces.
+- [x] Pass the identity-checked Kevin Horton `nestest` V1.00 architectural trace,
+  including its 76 stable undocumented encodings.
+- [ ] Add reset, IRQ, NMI, and per-cycle bus-access-order behavior and tests.
+- [ ] Add the NES master-clock scheduler and a dot-timed PPU oracle.
+- [ ] Add APU, controller input, DMA interactions, and deterministic replay.
+- [ ] Reach a deterministic headless NROM video/audio checkpoint.
+- [ ] Add a tested MMC1 implementation for the operator-owned compatibility
+  target.
+- [ ] Build the minimal `winit` / `wgpu` / `cpal` frontend without changing core
+  behavior.
+- [ ] Begin the GBA, Genesis / Mega Drive, and SNES cores only after the NES
+  vertical slice closes its gates.
+
+See [BUILD_PATH.md](BUILD_PATH.md) for the implementation order and
+[ROADMAP.md](ROADMAP.md) for phase gates and realistic program-level scope.
+
+## Architecture
+
+```text
+user-owned bytes
+      │
+      ▼
+format parser ──► validated cartridge ──► console core ──► timed video/audio
+                                               ▲
+host input ──► timestamp/latch adapter ─────────┘
+```
+
+The current workspace contains seven crates:
+
+| Crate | Responsibility |
+|---|---|
+| `retro-core` | Shared deterministic contracts and typed media/input metadata |
+| `format-ines` | Defensive borrowed iNES and NES 2.0 parser |
+| `format-nestest-log` | Bounded parser for hostile CPU-reference logs |
+| `cpu-6502` | Trace-first Ricoh 2A03 instruction layer |
+| `core-nes` | Validated NES cartridge ownership and mapper-0 CPU bus |
+| `retro-testkit` | Synthetic core, hashes, clean-room fixtures, and trace comparison |
+| `retro-cli` | Headless smoke, generated trace, and strict `nestest-v1` commands |
+
+The dependency and ownership rules are documented in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Quick start
+
+### Requirements
+
+- Rust/Cargo 1.96.0. The checked-in `rust-toolchain.toml` selects it
+  automatically through `rustup`.
+- Windows or Linux for the currently tested host environments.
+- Visual Studio C++ AddressSanitizer components only if running the Windows fuzz
+  gate.
+
+### Build and run the deterministic smoke test
+
+```powershell
+git clone https://github.com/PandaCatz/PandaUniEmu.git
+cd PandaUniEmu
+cargo run --release -p retro-cli
+```
+
+The default command runs the project-owned synthetic core. It does not require
+or load a ROM.
+
+### Run the standard verification gates
+
+```powershell
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
+cargo test --release --workspace
+cargo run --release -p retro-cli
+```
+
+On Windows, both parser fuzz targets can be exercised with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/run-fuzz.ps1 -Runs 10000
+```
+
+The clean-room NROM evidence gate is:
+
+```powershell
+python tools/check-cleanroom-nrom.py
+```
+
+The strict external trace requires operator-supplied files matching the exact
+identities in
+[docs/compatibility/NESTEST_PROVENANCE.md](docs/compatibility/NESTEST_PROVENANCE.md):
+
+```powershell
+$romPath = 'external-fixtures\nestest.nes'
+$logPath = 'external-fixtures\nestest.log'
+cargo run --release -p retro-cli -- nestest-v1 $romPath $logPath
+```
+
+External ROMs and logs are never required for ordinary builds or CI.
+
+## Built with AI
+
+PandaUniEmu is built with substantial AI assistance under human direction. AI
+coding agents help analyze architecture, write and revise code, construct
+tests, review diffs, and maintain project records.
+
+AI output is treated as untrusted until it passes the same review and evidence
+standards as any other contribution: independent oracles, focused regression
+tests, warnings-denied linting, debug and release test suites, fuzzing where
+applicable, and adversarial diff review. The human operator owns project scope,
+legal decisions, fixture authorization, and publication.
+
+## ROMs, fixtures, and clean-room policy
+
+- Use only ROMs and firmware you are legally entitled to use.
+- Commercial game data, firmware, audio, artwork, and operator-supplied test
+  fixtures are not part of this repository and are not relicensed by it.
+- The public `nestest` distribution has no explicit redistribution license
+  recorded by this project, so its files remain operator-supplied and ignored.
+- Project-owned clean-room NROM diagnostics contain no commercial game data.
+- Third-party test material and licenses are recorded in [NOTICE](NOTICE) and
+  [docs/TEST_PROVENANCE.md](docs/TEST_PROVENANCE.md).
+
+## Documentation
+
+- [CLAUDE.md](CLAUDE.md) — concise cross-session handoff and exact next tasks.
+- [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) — living implementation and
+  verification record.
+- [ROADMAP.md](ROADMAP.md) — phased product roadmap and stop rules.
+- [BUILD_PATH.md](BUILD_PATH.md) — ordered implementation path.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system boundaries, ownership,
+  timing, determinism, and safety rules.
+- [docs/compatibility/NES_ACCEPTANCE.md](docs/compatibility/NES_ACCEPTANCE.md) —
+  NES acceptance matrix.
+- [docs/CPU_6502.md](docs/CPU_6502.md) — current CPU evidence and limitations.
+
+## Contributing
+
+Contributions should preserve the project's evidence-first discipline:
+
+1. Keep format parsing isolated from runtime and frontend dependencies.
+2. Add focused tests and an independent oracle when one is available.
+3. Treat all external bytes as hostile and return errors instead of panicking.
+4. Keep simulation deterministic and rendering downstream of emulated state.
+5. Run format, warnings-denied clippy, debug tests, and release tests before
+   proposing a checkpoint.
+6. Never commit operator ROMs, firmware, reference logs, or copyrighted game
+   assets.
 
 ## License
 
 Copyright (C) 2026 PandaCatz and contributors.
 
-Except for separately identified third-party material, this project's source
-code and documentation are licensed under the GNU General Public License,
-version 2 or (at your option) any later version (`GPL-2.0-or-later`). See
-[LICENSE](LICENSE) for the complete terms and [NOTICE](NOTICE) for retained
-third-party licenses and attribution.
+Project-owned source code and documentation are licensed under the GNU General
+Public License, version 2 or (at your option) any later version
+(`GPL-2.0-or-later`). See [LICENSE](LICENSE) for the complete terms and
+[NOTICE](NOTICE) for separately licensed third-party material.
 
 This license does not grant rights to commercial ROMs, firmware, game assets,
-or other operator-supplied files. Those files are not part of this repository.
-
-## Definition of done for the first milestone
-
-The NES milestone is complete only when all of the following are exercised:
-
-1. A defensive iNES/NES 2.0 parser rejects truncated, oversized, and malformed
-   inputs without panicking.
-2. The CPU trace matches an independent `nestest` oracle for the supported
-   instruction set.
-3. A headless run produces a stable framebuffer hash and audio sample count.
-4. The frontend displays that framebuffer and plays bounded, underrun-measured
-   audio from the same deterministic core.
-5. Format, lint, unit, integration, parser-adversarial, and headless behavior
-   gates pass with warnings denied.
-
-The original input document remains at:
-`C:\Users\rezta\Desktop\Universal Retro Emulator  NES, SNES, Sega Genesis & GBA in Rust.md`.
+or other operator-supplied files.

@@ -106,6 +106,10 @@ hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
   identities, the strict CLI selects a CPU-trace allowlist for writes to
   `$4004`-`$4007` and `$4015`. The reviewed log makes exactly five terminal
   writes to those addresses; the normal NROM bus still faults unimplemented I/O.
+- Rebuilt the public GitHub README around verified status, the checked/remaining
+  build path, architecture and crate maps, reproducible commands, legal fixture
+  boundaries, contributing rules, and an explicit human-directed AI-development
+  disclosure. Removed the obsolete operator-local source-document path.
 - Added RustCrypto `sha2` 0.11.0 to the CLI runtime and testkit development
   tests, with default features disabled. The reviewed lockfile contains its
   small Rust dependency graph; the crate is MIT OR Apache-2.0 and requires

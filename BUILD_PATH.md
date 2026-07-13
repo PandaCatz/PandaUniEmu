@@ -6,7 +6,8 @@ trace-first CPU layer, mapper-0 CPU bus, generated trace runner, pinned MIT
 single-step oracle sample, clean-room NROM/py65 integration checkpoint, and
 bounded operator-path trace commands now exist.
 The strict command enforces the reviewed fixture identity and expected summary
-shape. The full independent mapper trace, PPU/APU/runtime scheduling, and the
+shape. The full independent mapper-0 CPU trace now passes all 8,991 rows / 8,990
+transitions. Reset/interrupt bus behavior, PPU/APU/runtime scheduling, and the
 frontend remain work, not claims of implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
@@ -168,8 +169,9 @@ result, and date. Performance gates use release builds and measured budgets.
 7. Completed: generate project-owned NROM-128/NROM-256 diagnostics and match
    their pinned BSD-3 py65 architectural traces through the real mapper and CLI,
    including trainer slicing and `$7000-$71FF` preload integration.
-8. Match against an operator-supplied `nestest` oracle and close every declared
-   semantic/cycle divergence.
+8. Completed: match the reviewed operator-authorized `nestest` oracle across
+   all 8,991 rows / 8,990 transitions, including its 76 stable undocumented
+   encodings, and close every observed architectural/cycle divergence.
 9. Add interrupt entry, DMA-stall behavior, the first master-clock scheduler,
    and a dot-timed PPU oracle.
 10. Reach the headless NROM video/audio gate, then resolve and spike

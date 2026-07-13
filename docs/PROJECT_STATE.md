@@ -36,6 +36,10 @@ frontend, or playable emulation.
   fault under the special policy.
 - The release strict path passes all 8,991 rows / 8,990 transitions, ending at
   `PC=C66E`, `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`, and 26,554 cycles.
+- Rebuilt the public GitHub README with evidence-backed status, a checkbox build
+  path, architecture/workspace summaries, runnable verification commands,
+  fixture/legal boundaries, contribution rules, and an explicit
+  human-directed AI-development disclosure. All 16 local Markdown links resolve.
 
 - Automated clean-room evidence regeneration without committing upstream files:
   a bounded downloader fetches only the py65 license and six executed source
