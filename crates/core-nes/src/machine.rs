@@ -1,5 +1,7 @@
-use crate::{CpuBusFault, NesCartridge, NromCpuBus, NtscScheduler, TimedPpuEvent, TimingError};
-use cpu_6502::{ClockOutcome, Cpu, CpuError, CpuState};
+use crate::{
+    CpuBusFault, NesCartridge, NromCpuBus, NtscScheduler, Ppu, TimedPpuEvent, TimingError,
+};
+use cpu_6502::{Bus, ClockOutcome, Cpu, CpuError, CpuState};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -16,16 +18,21 @@ pub struct MachineCycle {
 pub struct NesMachine {
     cpu: Cpu,
     bus: NromCpuBus,
+    ppu: Ppu,
     scheduler: NtscScheduler,
+    external_nmi_line: bool,
 }
 
 impl NesMachine {
     #[must_use]
     pub fn new(cartridge: NesCartridge, cpu_state: CpuState) -> Self {
+        let ppu = Ppu::new(&cartridge);
         Self {
             cpu: Cpu::new(cpu_state),
             bus: NromCpuBus::new(cartridge),
+            ppu,
             scheduler: NtscScheduler::default(),
+            external_nmi_line: false,
         }
     }
 
@@ -40,37 +47,106 @@ impl NesMachine {
     }
 
     #[must_use]
+    pub const fn ppu(&self) -> &Ppu {
+        &self.ppu
+    }
+
+    #[must_use]
     pub const fn scheduler(&self) -> &NtscScheduler {
         &self.scheduler
     }
 
     pub fn set_nmi_line(&mut self, asserted: bool) {
-        self.cpu.set_nmi_line(asserted);
+        self.external_nmi_line = asserted;
+        self.cpu
+            .set_nmi_line(self.external_nmi_line || self.ppu.nmi_output());
     }
 
     pub fn set_irq_line(&mut self, asserted: bool) {
         self.cpu.set_irq_line(asserted);
     }
 
-    /// Schedules the seven-cycle warm-reset sequence. Each later `clock` call
-    /// advances exactly one reset bus read and one NTSC CPU cycle.
+    /// Asserts the front-loader NES reset signal and schedules the seven-cycle
+    /// CPU reset sequence. PPU memory and its current VRAM address survive, but
+    /// resettable registers and PPU timing return to their deterministic reset
+    /// state. The hardware write-ignore warmup window is not modeled yet.
     pub fn begin_reset(&mut self) -> Result<(), MachineError> {
+        self.cpu.begin_reset()?;
+        self.ppu.reset_registers();
+        self.scheduler.reset_ppu_timing();
+        self.cpu
+            .set_nmi_line(self.external_nmi_line || self.ppu.nmi_output());
+        Ok(())
+    }
+
+    /// Schedules a CPU-only reset, matching the Famicom/top-loader reset wiring.
+    pub fn begin_cpu_reset(&mut self) -> Result<(), MachineError> {
         self.cpu.begin_reset().map_err(MachineError::from)
     }
 
-    /// Clocks one live CPU bus access. Timing is precomputed on a clone and only
-    /// committed if the CPU cycle succeeds, so timing overflow cannot leave the
-    /// CPU and scheduler in different cycles.
+    /// Clocks one live CPU bus access. The fixed phase advances three PPU dots,
+    /// applies their logical event, and then performs the CPU access. CPU, PPU,
+    /// and timing are committed together only after that access succeeds.
     pub fn clock(&mut self) -> Result<MachineCycle, MachineError> {
         let mut next_scheduler = self.scheduler.clone();
+        next_scheduler
+            .ppu_mut()
+            .set_rendering_enabled(self.ppu.rendering_enabled());
         let ppu_event = next_scheduler.advance_cpu_cycle()?;
-        let cpu = self.cpu.clock(&mut self.bus)?;
+
+        let mut next_ppu = self.ppu.clone();
+        if let Some(event) = ppu_event {
+            next_ppu.apply_event(event.event);
+        }
+
+        let mut next_cpu = self.cpu.clone();
+        next_cpu.set_nmi_line(self.external_nmi_line || next_ppu.nmi_output());
+        let cpu = {
+            let mut bus = MachineCpuBus {
+                nrom: &mut self.bus,
+                ppu: &mut next_ppu,
+            };
+            next_cpu.clock(&mut bus)?
+        };
+        next_cpu.set_nmi_line(self.external_nmi_line || next_ppu.nmi_output());
+        next_scheduler
+            .ppu_mut()
+            .set_rendering_enabled(next_ppu.rendering_enabled());
+
+        self.cpu = next_cpu;
+        self.ppu = next_ppu;
         self.scheduler = next_scheduler;
         Ok(MachineCycle {
             cpu,
             ppu_event,
             bus_fault: self.bus.take_fault(),
         })
+    }
+}
+
+struct MachineCpuBus<'a> {
+    nrom: &'a mut NromCpuBus,
+    ppu: &'a mut Ppu,
+}
+
+impl Bus for MachineCpuBus<'_> {
+    fn read(&mut self, address: u16) -> u8 {
+        if matches!(address, 0x2000..=0x3fff) {
+            let value = self.ppu.cpu_read_register((address & 0x0007) as u8);
+            self.nrom.observe_open_bus(value);
+            value
+        } else {
+            self.nrom.read(address)
+        }
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        if matches!(address, 0x2000..=0x3fff) {
+            self.nrom.observe_open_bus(value);
+            self.ppu.cpu_write_register((address & 0x0007) as u8, value);
+        } else {
+            self.nrom.write(address, value);
+        }
     }
 }
 
@@ -158,28 +234,76 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_io_fault_is_reported_on_its_exact_cpu_cycle() {
+    fn mirrored_ppu_register_write_is_routed_on_its_exact_cpu_cycle() {
         let mut machine = NesMachine::new(
-            cartridge_with_program(&[0x8d, 0x00, 0x20]),
+            cartridge_with_program(&[0xa9, 0x80, 0x8d, 0x08, 0x20]),
             CpuState::at(0x8000),
         );
 
-        for _ in 0..3 {
-            let cycle = machine.clock().expect("STA setup cycle succeeds");
+        for _ in 0..5 {
+            let cycle = machine.clock().expect("LDA/STA setup cycle succeeds");
             assert_eq!(cycle.bus_fault, None);
         }
         let write = machine.clock().expect("STA write cycle completes safely");
         assert!(matches!(write.cpu, ClockOutcome::InstructionComplete(_)));
-        assert_eq!(
-            write.bus_fault,
-            Some(CpuBusFault::UnsupportedWrite {
-                address: 0x2000,
-                value: 0,
-            })
-        );
+        assert_eq!(write.bus_fault, None);
+        assert_eq!(machine.ppu().control(), 0x80);
         assert_eq!(
             machine.scheduler().master_ticks(),
-            4 * MASTER_TICKS_PER_CPU_CYCLE
+            6 * MASTER_TICKS_PER_CPU_CYCLE
+        );
+    }
+
+    #[test]
+    fn ppumask_write_commits_matching_ppu_and_scheduler_rendering_state() {
+        let mut machine = NesMachine::new(
+            cartridge_with_program(&[0xa9, 0x08, 0x8d, 0x01, 0x20]),
+            CpuState::at(0x8000),
+        );
+        for _ in 0..6 {
+            machine.clock().expect("LDA/STA program clocks");
+        }
+        assert!(machine.ppu().rendering_enabled());
+        assert!(machine.scheduler().ppu().rendering_enabled());
+    }
+
+    #[test]
+    fn every_ppu_register_decodes_identically_at_the_top_mirror() {
+        for register in 0_u16..8 {
+            let cartridge = cartridge_with_program(&[]);
+            let mut expected_bus = NromCpuBus::new(cartridge.clone());
+            let mut expected_ppu = Ppu::new(&cartridge);
+            let mut mirrored_bus = NromCpuBus::new(cartridge.clone());
+            let mut mirrored_ppu = Ppu::new(&cartridge);
+            let value = 0x40 | register as u8;
+
+            MachineCpuBus {
+                nrom: &mut expected_bus,
+                ppu: &mut expected_ppu,
+            }
+            .write(0x2000 + register, value);
+            MachineCpuBus {
+                nrom: &mut mirrored_bus,
+                ppu: &mut mirrored_ppu,
+            }
+            .write(0x3ff8 + register, value);
+            assert_eq!(mirrored_ppu, expected_ppu, "register {register}");
+        }
+
+        let cartridge = cartridge_with_program(&[]);
+        let mut nrom = NromCpuBus::new(cartridge.clone());
+        let mut ppu = Ppu::new(&cartridge);
+        MachineCpuBus {
+            nrom: &mut nrom,
+            ppu: &mut ppu,
+        }
+        .write(0x4000, 0x5a);
+        assert_eq!(
+            nrom.take_fault(),
+            Some(CpuBusFault::UnsupportedWrite {
+                address: 0x4000,
+                value: 0x5a,
+            })
         );
     }
 
@@ -238,6 +362,45 @@ mod tests {
     }
 
     #[test]
+    fn front_loader_reset_resets_ppu_registers_and_timing_but_not_master_time() {
+        let mut machine = NesMachine::new(cartridge_with_program(&[]), CpuState::at(0x8000));
+        machine.ppu.cpu_write_register(0, 0x80);
+        machine.ppu.cpu_write_register(1, 0x18);
+        machine.ppu.cpu_write_register(5, 0xff);
+        machine
+            .scheduler
+            .advance_cpu_cycles(3)
+            .expect("test scheduler has headroom");
+        let master_ticks = machine.scheduler.master_ticks();
+
+        machine.begin_reset().expect("front-loader reset starts");
+
+        assert_eq!(machine.ppu.control(), 0);
+        assert_eq!(machine.ppu.mask(), 0);
+        assert_eq!(machine.ppu.temporary_address(), 0);
+        assert_eq!(machine.ppu.fine_x(), 0);
+        assert!(!machine.ppu.write_toggle());
+        assert_eq!(machine.scheduler.master_ticks(), master_ticks);
+        assert_eq!(
+            machine.scheduler.ppu().position(),
+            crate::PpuPosition::default()
+        );
+        assert!(!machine.scheduler.ppu().rendering_enabled());
+    }
+
+    #[test]
+    fn cpu_only_reset_preserves_famicom_ppu_state() {
+        let mut machine = NesMachine::new(cartridge_with_program(&[]), CpuState::at(0x8000));
+        machine.ppu.cpu_write_register(0, 0x80);
+        machine.ppu.cpu_write_register(1, 0x18);
+
+        machine.begin_cpu_reset().expect("CPU-only reset starts");
+
+        assert_eq!(machine.ppu.control(), 0x80);
+        assert_eq!(machine.ppu.mask(), 0x18);
+    }
+
+    #[test]
     fn accepted_irq_enters_automatically_through_the_machine_scheduler() {
         let mut state = CpuState::at(0x8000);
         state.status = FLAG_UNUSED;
@@ -287,6 +450,7 @@ mod tests {
             .set_master_ticks_for_test(u64::MAX - MASTER_TICKS_PER_CPU_CYCLE + 1);
         let before_cpu = machine.cpu.clone();
         let before_bus = machine.bus.clone();
+        let before_ppu = machine.ppu.clone();
         let before_scheduler = machine.scheduler.clone();
 
         assert_eq!(
@@ -297,6 +461,7 @@ mod tests {
         assert_eq!(machine.bus.cpu_ram(), before_bus.cpu_ram());
         assert_eq!(machine.bus.prg_ram(), before_bus.prg_ram());
         assert_eq!(machine.bus.take_fault(), before_bus.clone().take_fault());
+        assert_eq!(machine.ppu, before_ppu);
         assert_eq!(machine.scheduler, before_scheduler);
     }
 
@@ -320,8 +485,81 @@ mod tests {
                 );
                 assert_eq!(machine.scheduler().ppu().position().scanline, 241);
                 assert_eq!(machine.scheduler().ppu().position().dot, 4);
+                assert_ne!(machine.ppu().status() & 0x80, 0);
                 break;
             }
         }
+    }
+
+    #[test]
+    fn timed_vblank_drives_one_automatic_nmi_entry() {
+        let program = [0xa9, 0x80, 0x8d, 0x00, 0x20, 0xea, 0xea];
+        let mut machine = NesMachine::new(cartridge_with_program(&program), CpuState::at(0x8000));
+        let mut vblank_events = 0;
+        let mut nmi_entries = 0;
+
+        for _ in 0..30_000 {
+            let cycle = machine.clock().expect("synthetic NROM stream clocks");
+            if matches!(
+                cycle.ppu_event.map(|event| event.event),
+                Some(crate::PpuEvent::VblankStarted)
+            ) {
+                vblank_events += 1;
+            }
+            if let ClockOutcome::InterruptComplete(entry) = cycle.cpu {
+                nmi_entries += 1;
+                assert_eq!(entry.origin, Interrupt::Nmi);
+                assert_eq!(entry.kind, Interrupt::Nmi);
+                assert_eq!(entry.vector, 0xfffa);
+                assert_eq!(entry.after.pc, 0xa000);
+                assert_eq!(vblank_events, 1);
+                assert!(machine.ppu().nmi_output());
+            }
+            if matches!(
+                cycle.ppu_event.map(|event| event.event),
+                Some(crate::PpuEvent::VblankEnded)
+            ) {
+                assert_eq!(nmi_entries, 1);
+                assert!(!machine.ppu().nmi_output());
+                return;
+            }
+        }
+
+        panic!("first VBlank did not finish within the expected frame budget");
+    }
+
+    #[test]
+    fn status_read_lowers_ppu_nmi_without_erasing_the_cpu_latched_edge() {
+        let program = [
+            0xa9, 0x80, // LDA #$80
+            0x8d, 0x00, 0x20, // STA $2000
+            0xad, 0x02, 0x20, // LDA $2002
+            0xea,
+        ];
+        let mut machine = NesMachine::new(cartridge_with_program(&program), CpuState::at(0x8000));
+        machine.ppu.apply_event(crate::PpuEvent::VblankStarted);
+
+        let mut saw_status_read = false;
+        for _ in 0..24 {
+            let cycle = machine.clock().expect("register program clocks");
+            if matches!(
+                &cycle.cpu,
+                ClockOutcome::InstructionComplete(trace) if trace.before.pc == 0x8005
+            ) && !saw_status_read
+            {
+                saw_status_read = true;
+                assert_eq!(machine.cpu().state().a, 0x80);
+                assert_eq!(machine.ppu().status() & 0x80, 0);
+                assert!(!machine.ppu().nmi_output());
+            }
+            if let ClockOutcome::InterruptComplete(entry) = cycle.cpu {
+                assert!(saw_status_read);
+                assert_eq!(entry.kind, Interrupt::Nmi);
+                assert_eq!(entry.after.pc, 0xa000);
+                return;
+            }
+        }
+
+        panic!("latched NMI was lost after PPUSTATUS lowered the line");
     }
 }

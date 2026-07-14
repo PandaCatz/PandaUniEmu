@@ -13,8 +13,9 @@ bus traces match their ordered read/write oracle. The first exact NTSC
 master-clock and PPU-dot timing
 model is tested. Instruction execution now yields after each live bus cycle, and
 a machine-owned boundary advances the scheduler once per successful CPU cycle.
-PPU registers/rendering, APU, DMA, and the frontend remain work, not claims of
-implementation.
+The deterministic PPU register/address-space shell and logical VBlank-driven
+NMI path are implemented. Rendering fetches/pixels and dot-exact status races,
+APU, DMA, and the frontend remain work, not claims of implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -188,6 +189,10 @@ result, and date. Performance gates use release builds and measured budgets.
 12. Completed: verify seven-cycle hardware IRQ/NMI/reset entry,
     second-to-last-cycle polling (including every branch path), and BRK/IRQ NMI
     hijacking against the pinned external transistor-level oracle.
-13. Next: add PPU registers/addressing/rendering plus DMA/APU behavior.
-14. Reach the headless NROM video/audio gate, then resolve and spike
+13. Completed: add mirrored PPU registers, `v/t/fine-X/write-toggle`, buffered
+    data access, CHR/nametable/palette routing, basic OAM ports, and logical
+    VBlank-driven NMI behavior.
+14. Next: verify rendering-time fetches, scroll transfers, sprite evaluation,
+    pixels, and dot-race behavior, then add DMA/APU behavior.
+15. Reach the headless NROM video/audio gate, then resolve and spike
    `winit`/`wgpu`/`cpal` for the minimal frontend.

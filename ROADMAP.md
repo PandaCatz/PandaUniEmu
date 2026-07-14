@@ -14,11 +14,13 @@ the `I`-flag delay, and the seven-cycle sequences) are implemented. All 190
 pinned instruction bus traces match, and the first exact NTSC master-clock and
 PPU-dot timing checkpoint covers VBlank edges and the odd-frame skipped dot.
 Instruction execution now yields after each live bus cycle, while the
-machine-owned boundary advances the scheduler by 12 master ticks / 3 PPU dots
-and exposes exact-cycle VBlank events and mapper-bus faults. Hardware
+machine-owned boundary advances the scheduler by 12 master ticks / 3 PPU dots.
+A deterministic PPU register/address-space shell now routes mirrored CPU ports,
+CHR/nametable/palette memory, basic OAM access, and logical VBlank-driven NMI.
+Hardware
 IRQ/NMI/reset entry, second-to-last-cycle polling, and NMI hijacking are now
-verified against a pinned transistor-level oracle. PPU registers/rendering are
-next. The host
+verified against a pinned transistor-level oracle. Rendering fetches, pixels,
+sprites, and dot-exact PPUSTATUS/VBlank races are next. The host
 frontend intentionally follows the verified headless NES path. See `CLAUDE.md`
 for evidence and exact next tasks.
 

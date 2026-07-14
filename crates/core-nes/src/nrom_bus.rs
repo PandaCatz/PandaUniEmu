@@ -79,6 +79,10 @@ impl NromCpuBus {
         self.fault.take()
     }
 
+    pub(crate) const fn observe_open_bus(&mut self, value: u8) {
+        self.open_bus = value;
+    }
+
     pub fn peek(&self, address: u16) -> Result<u8, CpuBusFault> {
         match address {
             0x0000..=0x1fff => Ok(self.cpu_ram[usize::from(address) & (CPU_RAM_SIZE - 1)]),

@@ -64,6 +64,7 @@ $exactFiles = @(
     'crates/core-nes/src/lib.rs',
     'crates/core-nes/src/machine.rs',
     'crates/core-nes/src/nrom_bus.rs',
+    'crates/core-nes/src/ppu.rs',
     'crates/core-nes/src/ppu_timing.rs',
     'crates/cpu-6502/Cargo.toml',
     'crates/cpu-6502/src/lib.rs',

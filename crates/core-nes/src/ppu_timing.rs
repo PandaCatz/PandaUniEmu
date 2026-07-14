@@ -136,6 +136,10 @@ impl NtscScheduler {
         &mut self.ppu
     }
 
+    pub(crate) fn reset_ppu_timing(&mut self) {
+        self.ppu = PpuTiming::default();
+    }
+
     #[cfg(test)]
     pub(crate) fn set_master_ticks_for_test(&mut self, master_ticks: u64) {
         self.master_ticks = master_ticks;

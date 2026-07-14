@@ -16,9 +16,12 @@ retain instruction-boundary/cycle evidence, not ordered bus-trace evidence. The
 CPU now exposes one live bus read/write per successful `clock` call while the
 compatible `step` wrapper completes an instruction. A machine-owned boundary
 composes that interface with mapper 0 and advances the exact NTSC scheduler by
-12 master ticks / 3 PPU dots per CPU cycle, exposing exact-cycle VBlank events
-and bus faults. Interrupt and scheduled warm-reset entry use that same live
-machine boundary. No PPU register or rendering device exists.
+12 master ticks / 3 PPU dots per CPU cycle. A deterministic PPU shell now routes
+mirrored `$2000-$3FFF` CPU ports, NROM CHR ROM/RAM, horizontal/vertical/four-
+screen nametables, palette aliases, basic OAM ports, buffered PPUDATA access,
+and logical VBlank-driven NMI. Interrupt and scheduled warm-reset entry use that
+same live machine boundary. Rendering fetches, pixels, sprites, DMA/APU, and
+dot-exact status races do not exist.
 Seven functional workspace crates exist. The
 reviewed QMT `nestest` pair passes 8,991 rows / 8,990
 transitions through the mapper-0 CPU bus, including the exact 76 stable
@@ -27,10 +30,40 @@ independent instruction-boundary evidence across all 151 documented encodings.
 Project-owned NROM-128/NROM-256 diagnostics also match
 pinned py65 architectural traces through the mapper and CLI, including a
 trainer-bearing NROM-128 case that reads both preload endpoints. There is no
-PPU/APU, mapper 1, complete NES machine, host
+PPU renderer, APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
+
+PPU register/address-space shell checkpoint (2026-07-14, publication pending):
+
+- Added the eight CPU-visible PPU ports with `$2000-$3FFF` mirroring, a distinct
+  PPU I/O latch, PPUSTATUS side effects, shared `v/t/fine-X/write-toggle` state,
+  buffered PPUDATA reads, increment modes, and basic OAM address/data behavior.
+- Added total 14-bit PPU memory routing for NROM CHR ROM/RAM, horizontal,
+  vertical, and four-screen nametables, the `$3000-$3EFF` mirror, and palette
+  repetition/universal-background aliases. CHR-ROM writes are nonfatal and
+  ignored; palette payloads are six-bit.
+- Connected PPUMASK rendering enable to the existing odd-frame scheduler and
+  timed VBlank start/end to PPUSTATUS and the CPU's edge-triggered NMI path.
+  The fixed phase is three PPU dots, logical event application, then one CPU
+  access; a status read lowers the PPU line without erasing a CPU-latched edge.
+- Focused `core-nes` tests pass for the register/address shell and machine NMI
+  integration. These generated self-tests are not an independent PPU oracle;
+  rendering-time behavior and exact PPUSTATUS/VBlank races remain unclaimed.
+- Fresh CPU/NMI review found no P0-P2 issue. Legal/oracle review found no copied
+  local-course material and required the new source allowlist plus narrower
+  evidence/limitation records; those publication findings were fixed. Fresh
+  technical review then found reset-state, scheduler-mask synchronization,
+  grayscale palette-read, and OAM attribute-bit gaps; front-loader versus
+  CPU-only reset APIs and focused regressions now cover all four. The reset
+  write-ignore warmup interval remains explicitly deferred.
+- Full format, warnings-denied Clippy, debug/release build, 131-test
+  debug/release, and debug/release doc-test gates passed. The strict operator
+  `nestest` run still matches 8,991 rows / 8,990 transitions; the three-case
+  clean-room generator and six Python checks passed; the pinned transistor
+  oracle passed; both parser fuzz targets completed 10,000 Windows ASan runs;
+  and the release synthetic CLI hashes are unchanged.
 
 Live interrupt/reset oracle checkpoint (2026-07-14, published in
 `0121c134533f2f0d9c84ba3be97984555ac1f6f5`):
@@ -479,13 +512,12 @@ Ubuntu 24.04.
 
 ## Next action
 
-Introduce the PPU register/address-space shell into the existing machine
-boundary, route mirrored `$2000-$3FFF` CPU accesses, and connect timed
-VBlank/NMI behavior. Verify every
-increment with the existing state/bus oracles plus focused PPU register/timing
-tests. Rendering fetches, scrolling, sprites, DMA/APU, and the headless
-video/audio gate follow. Only after that mapper-0 whole-machine gate should MMC1
-be implemented for the supplied target.
+Continue the PPU from the verified register/address shell into rendering-time
+fetches and scroll transfers, then sprite evaluation and deterministic pixels.
+Pin numeric/dot-level oracles before claiming equivalence, including the
+PPUSTATUS/VBlank suppression window and rendering-time register behavior. DMA,
+APU, and the headless video/audio gate follow. Only after that mapper-0
+whole-machine gate should MMC1 be implemented for the supplied target.
 
 ## Open decisions
 

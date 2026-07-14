@@ -43,9 +43,10 @@ The workspace contains seven functional crates:
 - `format-ines`: defensive borrowed parser for iNES and NES 2.0 images.
 - `format-nestest-log`: bounded hostile-byte parser for reference CPU trace rows.
 - `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, a
-  minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults,
-  the exact NTSC master-clock/PPU-dot timing layer, and a machine-owned
-  one-CPU-cycle boundary that composes the live CPU bus with that scheduler.
+  CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults, the exact
+  NTSC master-clock/PPU-dot timing layer, a deterministic PPU register/address
+  shell, and a machine-owned one-CPU-cycle boundary that composes the live CPU
+  bus, PPU ports, logical VBlank NMI, and scheduler.
 - `retro-testkit`: deterministic synthetic core, capture hashes, generated
   mapper-0 trace comparison, the `nestest` CPU-only I/O policy selected by the
   strict CLI after fixture identity verification, and pinned clean-room
@@ -66,11 +67,12 @@ The fuzz project calls both format parsers with arbitrary bytes. The checked-in
 launcher generates redistribution-safe seeds and handles the Windows
 AddressSanitizer runtime path.
 
-Not implemented: `retro-frontend`, a complete NES machine, PPU/APU/I/O bus
-devices, asynchronous mid-instruction reset takeover, DMA/RDY, input
+Not implemented: `retro-frontend`, a complete NES machine, PPU rendering
+fetches/pixels/sprites and exact status races, APU, asynchronous mid-instruction
+reset takeover, DMA/RDY, input
 hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 The CPU and timing scheduler are connected at one live mapper-bus cycle per
-machine call, but there is no PPU register or rendering device yet.
+machine call. The PPU register/address shell exists, but there is no renderer.
 
 The operator's 31-file NES instruction folder is located at
 `%USERPROFILE%\Desktop\panda video\nes`. It was ingested into
@@ -256,6 +258,13 @@ repository.
   plus every local ROM/log. Published the live interrupt/reset checkpoint as
   `0121c134533f2f0d9c84ba3be97984555ac1f6f5` to
   `PandaCatz/PandaUniEmu@main`.
+- Added and focused-tested the deterministic PPU register/address-space shell:
+  mirrored `$2000-$3FFF` CPU ports, a distinct PPU I/O latch, PPUSTATUS side
+  effects, shared `v/t/fine-X/write-toggle`, buffered PPUDATA access, basic OAM
+  ports, NROM CHR ROM/RAM, all current nametable modes, and palette aliases.
+  Timed VBlank now drives the existing edge-triggered CPU NMI path under the
+  documented three-PPU-dots-then-one-CPU-access phase. These are generated
+  self-tests, not independent proof of rendering or dot-exact status races.
 - Fresh technical and claims reviews found three bounded issues: missing
   `FrameOverflow` atomicity coverage, wording that accidentally extended the
   190 documented-vector bus oracle to undocumented opcodes, and publication of
@@ -302,11 +311,12 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 116 passed, 0 failed.
-- Release tests: 116 passed, 0 failed; debug/release doc tests passed.
+- Debug tests: 131 passed, 0 failed.
+- Release tests: 131 passed, 0 failed; debug/release doc tests passed.
 - `cpu-6502`: 46 tests passed, including live per-cycle access, mutation,
   227-encoding differential, boundary rejection, and the 190-vector oracle.
-- `core-nes`: 22 tests passed, including all scheduler and machine-cycle tests.
+- `core-nes`: 37 tests passed, including PPU register/address routing, NMI/reset
+  integration, scheduler, and machine-cycle tests.
 - All six new NTSC timing tests passed: exact 3:1 CPU/PPU progression, VBlank
   edges and master timestamp, 89,342/89,341-dot frame alternation, no shortened
   frame while rendering is disabled, and failure-atomic overflow.
@@ -418,10 +428,9 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 
 ## Next tasks, in order
 
-1. Add the PPU register/address-space shell to the existing machine boundary,
-   route mirrored
-   `$2000-$3FFF` CPU accesses, and connect the verified VBlank timeline to the
-   CPU NMI line. Continue with fetch, scroll, sprite, and rendering oracles.
+1. Continue the verified PPU shell with rendering-time fetch, scroll-transfer,
+   sprite-evaluation, pixel, and dot-race oracles. Do not claim cycle-accurate
+   rendering from the current register/address tests.
 2. Add DMA/APU/input and reach a deterministic headless NROM video/audio
    checkpoint.
 3. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
@@ -458,8 +467,8 @@ traces match through a live one-cycle interface, but the sample is not exhaustiv
 Hardware IRQ/NMI/reset entry, selected poll positions, and NMI hijacking have
 separate transistor-level evidence. Undocumented-opcode bus order, asynchronous
 mid-instruction reset takeover, DMA/RDY, and exhaustive NMI edge cases remain
-unchecked. The machine boundary advances the NTSC scheduler after each
-successful CPU bus cycle and exposes timed events/faults; it
-is not connected to PPU registers or rendering. DMA, APU, input, gameplay, and mapper 1 remain
-unimplemented. PPU/APU/I/O are intentionally faulted outside the strict CLI's
-reviewed trace-write allowlist. This is not a playable NES emulator.
+unchecked. The machine boundary uses a fixed three-PPU-dots-then-one-CPU-access
+phase and connects timed VBlank to the PPU status/NMI shell. Exact same-dot
+status races, rendering fetches/pixels/sprites, DMA, APU, input, gameplay, and
+mapper 1 remain unimplemented. The strict CPU-trace CLI retains its separate
+reviewed I/O policy. This is not a playable NES emulator.

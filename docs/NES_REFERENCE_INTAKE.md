@@ -89,9 +89,12 @@ timing checkpoint built after this intake is deliberately smaller than a PPU:
 - the one-dot odd-frame shortening only while rendering is enabled; and
 - checked, failure-atomic timing counters.
 
-This does not implement PPU registers, VRAM/CHR access, rendering, NMI races,
-DMA, APU, or a complete machine. It also does not make the instruction-stepped
-CPU yield between bus cycles.
+The later machine checkpoint now makes the CPU yield at every live bus cycle and
+adds a deterministic PPU register/address-space shell: mirrored CPU ports,
+shared scroll/address state, buffered data access, NROM CHR, nametable/palette
+mirroring, basic OAM ports, and logical VBlank-driven NMI. It still does not
+implement rendering fetches/pixels, exact PPUSTATUS/VBlank race windows, DMA,
+APU, or a complete machine. The local notes remain a checklist, not an oracle.
 
 ## Timing references
 

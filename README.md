@@ -13,9 +13,10 @@ Genesis / Mega Drive, and SNES cores.
 > [!IMPORTANT]
 > PandaUniEmu is a research-stage, headless emulator foundation. The NES CPU
 > and mapper-0 trace checkpoints are real and verified, and a first NTSC
-> master-clock/PPU-dot timing model now advances through a machine-owned cycle
-> boundary. PPU registers and rendering, APU, input hardware, a complete NES
-> machine, and the graphical frontend are not yet implemented. Instruction
+> master-clock/PPU-dot timing model now drives a deterministic PPU register and
+> address-space shell through a machine-owned cycle boundary. Rendering,
+> DMA/APU, input hardware, a complete NES machine, and the graphical frontend
+> are not yet implemented. Instruction
 > execution yields after every live bus cycle and all 190 sampled instruction
 > traces match. Live IRQ, NMI, and reset entry, second-to-last-cycle polling,
 > and NMI hijacking are also verified against a pinned transistor-level oracle.
@@ -34,9 +35,10 @@ Genesis / Mega Drive, and SNES cores.
 | IRQ, NMI, and reset | Verified live-cycle checkpoint | Seven bus cycles per entry, second-to-last-cycle polling, branch paths, and BRK/IRQ NMI hijacking match the pinned external transistor oracle |
 | Mapper 0 CPU integration | Verified checkpoint | NROM-128, NROM-256, PRG RAM, trainer preload, and clean-room traces |
 | NTSC timing foundation | Verified checkpoint | Exact 12:4 master-clock divisors, VBlank edges, 341×262 geometry, and rendering-dependent odd-frame shortening |
-| Machine CPU/timing boundary | Verified checkpoint | One CPU bus cycle advances exactly 12 master ticks / 3 PPU dots; VBlank events and exact-cycle bus faults are observable |
+| PPU register/address shell | Verified checkpoint | Mirrored `$2000-$3FFF` ports, `v/t/fine-X/write-toggle`, buffered data reads, CHR RAM/ROM policy, nametable/palette mirroring, OAM ports, and logical VBlank status are covered by focused tests |
+| Machine CPU/timing boundary | Verified checkpoint | One CPU bus cycle advances exactly 12 master ticks / 3 PPU dots; timed VBlank drives the edge-triggered CPU NMI path |
 | Quality gates | Passing | Workspace debug/release tests, doc tests, warnings-denied Clippy, clean-room checks, strict `nestest`, and parser fuzzing |
-| PPU registers/rendering, APU, input, DMA | Not implemented | Next active NES milestones |
+| PPU fetch/rendering, APU, input, DMA | Not implemented | Next active NES milestones |
 | Native frontend | Not implemented | Intentionally deferred until the headless NES core is verified |
 | GBA, Genesis / Mega Drive, SNES | Planned | No implementation claims yet |
 
@@ -78,8 +80,10 @@ Published checkpoints and their Windows/Ubuntu CI evidence are available in the
   wrapper, and connect each successful CPU bus cycle to the NTSC scheduler.
 - [x] Verify hardware interrupt/reset entry bus order, sub-instruction polling,
   and NMI hijacking against an independent oracle.
-- [ ] Add PPU registers, address-space mapping, fetches, and rendering on the
-  verified dot timeline.
+- [x] Add mirrored PPU registers, address-space mapping, basic OAM ports, and
+  logical VBlank/NMI behavior on the verified dot timeline.
+- [ ] Add rendering-time fetches, scroll transfers, sprite evaluation, pixels,
+  and dot-race oracles.
 - [ ] Add APU, controller input, DMA interactions, and deterministic replay.
 - [ ] Reach a deterministic headless NROM video/audio checkpoint.
 - [ ] Add a tested MMC1 implementation for the operator-owned compatibility
