@@ -283,6 +283,11 @@ repository.
 - Added an exclusive prepared CPU-cycle reservation so scheduler overflow and
   CPU counter headroom are checked before live PPU mapper observations, while
   NMI/IRQ lines may still be driven before the infallible CPU bus access.
+- Published the verified 61-file background fetch/scroll checkpoint as
+  `2593869480bde4878dac3afbda569eb1dcdbd5e3`. The deletion-safe preview found no
+  missing managed files and excluded all local ROM/log and external-oracle
+  material. GitHub Actions run `29365384353` passed all six Windows/Ubuntu test,
+  10,000-run fuzz, and clean-room evidence jobs.
 - Published the verified 61-file PPU register/address-space shell checkpoint as
   `86f0b4a0d12d2223cfd25bb64066ceb443dde06b` to
   `PandaCatz/PandaUniEmu@main`. The deletion-safe preview found no missing

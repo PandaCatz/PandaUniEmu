@@ -36,7 +36,8 @@ frontend, or playable emulation.
 
 ## Implemented this session
 
-Background fetch/scroll checkpoint (2026-07-14, pending publication):
+Background fetch/scroll checkpoint (2026-07-14, published in
+`2593869480bde4878dac3afbda569eb1dcdbd5e3`):
 
 - Moved CHR RAM and all nametable storage from a copied PPU snapshot to the live
   mapper-0 bus. Automatic reads now expose separate address and data phases for
@@ -75,6 +76,12 @@ Background fetch/scroll checkpoint (2026-07-14, pending publication):
   and six Python checks passed; the pinned transistor oracle passed; both parser
   fuzz targets completed 10,000 Windows ASan runs; and the synthetic release
   CLI hashes remain unchanged.
+- The deletion-safe 61-file publisher preview found no missing managed files,
+  validated the allowlisted snapshot, preserved every non-allowlisted remote
+  file, and excluded local ROM/log and external-oracle material. The checkpoint
+  was published to `PandaCatz/PandaUniEmu@main` as
+  `2593869480bde4878dac3afbda569eb1dcdbd5e3`; GitHub Actions run `29365384353`
+  passed all six Windows/Ubuntu test, fuzz, and clean-room evidence jobs.
 
 PPU register/address-space shell checkpoint (2026-07-14, published in
 `86f0b4a0d12d2223cfd25bb64066ceb443dde06b`):
