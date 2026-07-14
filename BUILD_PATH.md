@@ -10,9 +10,10 @@ shape. The full independent mapper-0 CPU trace now passes all 8,991 rows / 8,990
 transitions. Architectural IRQ/NMI/reset sampling and entry are implemented at
 instruction granularity, and all 190 pinned instruction bus traces match their
 ordered read/write oracle. The first exact NTSC master-clock and PPU-dot timing
-model is tested. Cycle-stepped CPU/device interleaving, per-cycle hardware
-interrupt/reset entry, PPU registers/rendering, APU, DMA, and the frontend remain
-work, not claims of implementation.
+model is tested. Instruction execution now yields after each live bus cycle, and
+a machine-owned boundary advances the scheduler once per successful CPU cycle.
+Per-cycle hardware interrupt/reset entry, PPU registers/rendering, APU, DMA, and
+the frontend remain work, not claims of implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -180,8 +181,10 @@ result, and date. Performance gates use release builds and measured budgets.
    ordered instruction bus trace in the 190-vector oracle.
 10. Completed: add the first exact NTSC master-clock scheduler and dot-timed
     oracle, including VBlank edges and the rendering-dependent odd-frame skip.
-11. Next: make the CPU cycle-steppable, connect machine-owned devices to the
-    scheduler, and add verified PPU registers/addressing/rendering plus DMA/APU
-    behavior.
-12. Reach the headless NROM video/audio gate, then resolve and spike
+11. Completed: make instruction execution cycle-steppable, preserve the `step`
+    wrapper, and connect a machine-owned mapper bus and NTSC scheduler at one
+    CPU bus cycle per call with exact-cycle event/fault reporting.
+12. Next: verify hardware interrupt/reset cycle entry, polling, and hijacking;
+    then add PPU registers/addressing/rendering plus DMA/APU behavior.
+13. Reach the headless NROM video/audio gate, then resolve and spike
    `winit`/`wgpu`/`cpal` for the minimal frontend.

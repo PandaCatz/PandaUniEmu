@@ -44,7 +44,8 @@ The workspace contains seven functional crates:
 - `format-nestest-log`: bounded hostile-byte parser for reference CPU trace rows.
 - `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, a
   minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults,
-  plus the first exact NTSC master-clock/PPU-dot timing layer.
+  the exact NTSC master-clock/PPU-dot timing layer, and a machine-owned
+  one-CPU-cycle boundary that composes the live CPU bus with that scheduler.
 - `retro-testkit`: deterministic synthetic core, capture hashes, generated
   mapper-0 trace comparison, the `nestest` CPU-only I/O policy selected by the
   strict CLI after fixture identity verification, and pinned clean-room
@@ -56,7 +57,8 @@ The workspace contains seven functional crates:
   76 stable undocumented encodings exercised by `nestest`, explicit addressing,
   flags, cycle totals, stack/control flow, decode metadata, a pinned MIT
   documented-opcode single-step oracle sample, strict ordered bus traces for all
-  190 sampled vectors, and instruction-granular interrupt/reset handling
+  190 sampled vectors through a live one-cycle `clock` interface, a compatible
+  whole-instruction `step` wrapper, and instruction-granular interrupt/reset handling
   (edge-triggered NMI, level-triggered IRQ, the one-instruction `I`-flag delay,
   and the seven-cycle interrupt/reset sequences).
 
@@ -65,10 +67,10 @@ launcher generates redistribution-safe seeds and handles the Windows
 AddressSanitizer runtime path.
 
 Not implemented: `retro-frontend`, a complete NES machine, PPU/APU/I/O bus
-devices, cycle-stepped CPU execution (including per-cycle hardware
-interrupt/reset entry and NMI hijacking), DMA, input hardware, SRAM persistence,
-save states, rewind, or any GBA/Genesis/SNES code. A timing scheduler exists, but
-it is not yet connected to a machine or device bus.
+devices, per-cycle hardware interrupt/reset entry and NMI hijacking, DMA, input
+hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
+The CPU and timing scheduler are connected at one live mapper-bus cycle per
+machine call, but there is no PPU register or rendering device yet.
 
 The operator's 31-file NES instruction folder is located at
 `%USERPROFILE%\Desktop\panda video\nes`. It was ingested into
@@ -191,7 +193,32 @@ treat its code/claims as an oracle.
   per scanline, 262 scanlines per frame, VBlank edges at 241/1 and 261/1, and
   the rendering-dependent odd-frame jump from 261/339 to 0/0. Checked counters
   are failure-atomic. Six focused timing tests pass. This is a timing layer, not
-  a PPU implementation or a cycle-stepped machine.
+  a PPU implementation.
+- Implemented live instruction-cycle execution and machine timing integration.
+  `Cpu::clock` performs exactly one live bus read/write per successful call and
+  reports progress, instruction completion, or an unsupported opcode after its
+  consumed fetch cycle; `Cpu::step` now loops that interface. Typed microstate covers all
+  227 decoded encodings. The strict 190-vector gate now checks exactly one bus
+  access per call and byte-for-byte ordered traces; a differential test matches
+  the retained test-only whole-instruction implementation for all 227 encodings.
+  A mutation-between-cycles test proves operand reads are live rather than
+  replayed. Interrupt/reset whole operations reject an active instruction
+  without changing CPU or bus state.
+- Added `core-nes::NesMachine::clock`, which composes `Cpu`, `NromCpuBus`, and
+  `NtscScheduler`. Each successful CPU bus cycle advances 12 master ticks / 3
+  PPU dots, reports unsupported mapper-I/O on the exact causing cycle, and
+  exposes timed VBlank events. Scheduler overflow is preflighted so CPU and
+  timing state cannot diverge. Five focused machine tests cover NOP completion,
+  an exact-cycle `$2000` write fault, unsupported-fetch lockstep, overflow
+  atomicity, and the VBlank-start delivery cycle.
+- Fresh adversarial review found and resolved machine lockstep on unsupported
+  opcode fetches: the fetch now consumes one CPU cycle and returns a typed clock
+  outcome, so the scheduler advances and cannot replay a side-effectful read at
+  frozen time. It also strengthened all-227 per-call bus regression coverage,
+  made CPU overflow tests detect reads, added machine timing-overflow atomicity,
+  and asserted VBlank delivery call count, CPU cycles, master ticks, and PPU
+  position. The lack of an independent ordered-bus oracle for the 76 stable
+  undocumented encodings remains documented, not promoted to a verified claim.
 - Fresh technical and claims reviews found three bounded issues: missing
   `FrameOverflow` atomicity coverage, wording that accidentally extended the
   190 documented-vector bus oracle to undocumented opcodes, and publication of
@@ -235,8 +262,11 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 97 passed, 0 failed.
-- Release tests: 97 passed, 0 failed; doc tests passed.
+- Debug tests: 106 passed, 0 failed.
+- Release tests: 106 passed, 0 failed; doc tests passed.
+- `cpu-6502`: 38 tests passed, including live per-cycle access, mutation,
+  227-encoding differential, boundary rejection, and the 190-vector oracle.
+- `core-nes`: 20 tests passed, including all scheduler and machine-cycle tests.
 - All six new NTSC timing tests passed: exact 3:1 CPU/PPU progression, VBlank
   edges and master timestamp, 89,342/89,341-dot frame alternation, no shortened
   frame while rendering is disabled, and failure-atomic overflow.
@@ -345,13 +375,13 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 
 ## Next tasks, in order
 
-1. In progress: turn the exact instruction bus trace into a cycle-stepped CPU
-   driver interface. Preserve the existing whole-instruction `step` wrapper and
-   strict 190-vector bus/state gates while allowing the machine scheduler to
-   observe and advance after each read/write cycle. Then verify hardware
-   interrupt/reset bus entry, sub-instruction polling, and NMI hijacking with an
-   independently licensed oracle.
-2. Add the machine-owned PPU register/address-space shell, route mirrored
+1. Curate a minimal reproducible harness from the pinned MIT `perfect6502`
+   source recorded in `docs/compatibility/PERFECT6502_PROVENANCE.md`; use it to
+   verify and implement live hardware IRQ/NMI/reset bus entry, second-to-last
+   cycle polling, and NMI hijacking without weakening the current 190-vector
+   and full-trace gates.
+2. Add the PPU register/address-space shell to the existing machine boundary,
+   route mirrored
    `$2000-$3FFF` CPU accesses, and connect the verified VBlank timeline to the
    CPU NMI line. Continue with fetch, scroll, sprite, and rendering oracles.
 3. Add DMA/APU/input and reach a deterministic headless NROM video/audio
@@ -386,10 +416,10 @@ The synthetic core proves only the shared contract/headless capture path. The
 CPU now has independent instruction-boundary samples across all documented
 encodings and passes the full mapper-0 `nestest` architectural trace, including
 its 76 stable undocumented encodings. All 190 sampled ordered instruction bus
-traces match, but the sample is not exhaustive, execution cannot yield between
-cycles, and hardware interrupt/reset entry bus order, sub-instruction polling,
-and NMI hijacking remain unchecked. The NTSC scheduler proves clock ratios,
-frame geometry, VBlank edges, and the odd-frame skip only; it is not connected
-to PPU registers or rendering. DMA, APU, input, gameplay, and mapper 1 remain
+traces match through a live one-cycle interface, but the sample is not exhaustive,
+and hardware interrupt/reset entry bus order, sub-instruction polling, and NMI
+hijacking remain unchecked. The machine boundary advances the NTSC scheduler
+after each successful instruction bus cycle and exposes timed events/faults; it
+is not connected to PPU registers or rendering. DMA, APU, input, gameplay, and mapper 1 remain
 unimplemented. PPU/APU/I/O are intentionally faulted outside the strict CLI's
 reviewed trace-write allowlist. This is not a playable NES emulator.

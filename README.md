@@ -13,11 +13,12 @@ Genesis / Mega Drive, and SNES cores.
 > [!IMPORTANT]
 > PandaUniEmu is a research-stage, headless emulator foundation. The NES CPU
 > and mapper-0 trace checkpoints are real and verified, and a first NTSC
-> master-clock/PPU-dot timing model exists. PPU registers and rendering, APU,
-> input hardware, a complete machine, and the graphical frontend are not yet
-> implemented. All 190 sampled instruction bus traces match, but execution still
-> cannot yield mid-instruction and hardware interrupt/reset entry is not
-> bus-cycle verified. The project does not currently play games.
+> master-clock/PPU-dot timing model now advances through a machine-owned cycle
+> boundary. PPU registers and rendering, APU, input hardware, a complete NES
+> machine, and the graphical frontend are not yet implemented. Instruction
+> execution yields after every live bus cycle and all 190 sampled instruction
+> traces match, but hardware interrupt/reset entry is not bus-cycle verified.
+> The project does not currently play games.
 
 ## Current status
 
@@ -28,10 +29,11 @@ Genesis / Mega Drive, and SNES cores.
 | NES 2A03 CPU architecture | Verified checkpoint | All 151 documented encodings pass a pinned 190-vector MIT oracle sample |
 | Stable undocumented CPU encodings | Verified checkpoint | The exact 76 encodings exercised by `nestest` pass |
 | Independent full CPU trace | Passed | 8,991 rows / 8,990 transitions, final `PC=C66E`, 26,554 cycles |
-| CPU instruction bus order | Verified sample | All 190 pinned vectors match ordered reads/writes byte for byte; execution remains instruction-stepped |
+| CPU cycle stepping and bus order | Verified checkpoint | Each successful `clock` call performs one live read/write; all 190 pinned vectors match byte for byte; `step` remains as a compatibility wrapper |
 | IRQ, NMI, and reset | Architectural checkpoint | Edge/level sampling, `I`-flag delay, frames, vectors, and seven-cycle totals are tested; hardware entry bus order remains open |
 | Mapper 0 CPU integration | Verified checkpoint | NROM-128, NROM-256, PRG RAM, trainer preload, and clean-room traces |
 | NTSC timing foundation | Verified checkpoint | Exact 12:4 master-clock divisors, VBlank edges, 341×262 geometry, and rendering-dependent odd-frame shortening |
+| Machine CPU/timing boundary | Verified checkpoint | One CPU bus cycle advances exactly 12 master ticks / 3 PPU dots; VBlank events and exact-cycle bus faults are observable |
 | Quality gates | Passing | Workspace debug/release tests, doc tests, warnings-denied Clippy, clean-room checks, strict `nestest`, and parser fuzzing |
 | PPU registers/rendering, APU, input, DMA | Not implemented | Next active NES milestones |
 | Native frontend | Not implemented | Intentionally deferred until the headless NES core is verified |
@@ -71,8 +73,10 @@ Published checkpoints and their Windows/Ubuntu CI evidence are available in the
 - [x] Add architectural reset/IRQ/NMI behavior and match all 190 sampled
   instruction bus-access traces.
 - [x] Add the first exact NTSC master-clock scheduler and PPU-dot timing oracle.
-- [ ] Make CPU execution cycle-steppable and verify hardware interrupt/reset
-  entry bus order, sub-instruction polling, and NMI hijacking.
+- [x] Make instruction execution cycle-steppable, retain the whole-instruction
+  wrapper, and connect each successful CPU bus cycle to the NTSC scheduler.
+- [ ] Verify hardware interrupt/reset entry bus order, sub-instruction polling,
+  and NMI hijacking against an independent oracle.
 - [ ] Add PPU registers, address-space mapping, fetches, and rendering on the
   verified dot timeline.
 - [ ] Add APU, controller input, DMA interactions, and deterministic replay.

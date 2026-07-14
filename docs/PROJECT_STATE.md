@@ -12,10 +12,12 @@ now matches the sampled documented 6502 bus sequences in the pinned oracle. The
 SingleStepTests per-cycle bus traces are pinned as an oracle and a strict test
 matches all 190 vectors byte for byte. The 76 supported undocumented encodings
 retain instruction-boundary/cycle evidence, not ordered bus-trace evidence. The
-first NTSC timing layer now advances
-an exact rational master clock, three PPU dots per CPU cycle, VBlank edges, and
-the rendering-dependent odd-frame skip. Execution is still instruction-stepped
-(no mid-instruction yielding), and no PPU register or rendering device exists.
+CPU now exposes one live bus read/write per successful `clock` call while the
+compatible `step` wrapper completes an instruction. A machine-owned boundary
+composes that interface with mapper 0 and advances the exact NTSC scheduler by
+12 master ticks / 3 PPU dots per CPU cycle, exposing exact-cycle VBlank events
+and bus faults. Hardware interrupt/reset entry is still a whole operation, and
+no PPU register or rendering device exists.
 Seven functional workspace crates exist. The
 reviewed QMT `nestest` pair passes 8,991 rows / 8,990
 transitions through the mapper-0 CPU bus, including the exact 76 stable
@@ -28,6 +30,41 @@ PPU/APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
+
+Live CPU-cycle and machine-clock checkpoint (2026-07-14, publication pending):
+
+- Refactored production instruction execution into a resumable typed cycle state
+  machine. `Cpu::clock` performs exactly one live bus access and advances one
+  CPU cycle; `ClockOutcome` distinguishes progress from instruction completion.
+  The public `step` wrapper repeatedly clocks the same instruction. All 227
+  supported decoded encodings use this live path; the former instruction engine
+  is compiled only for differential tests.
+- Tightened the strict 190-vector test to call the CPU once per expected bus
+  cycle, require one and only one new access each time, and compare the complete
+  ordered trace and final state. Added a live-memory mutation test plus a
+  227-encoding differential test against the test-only legacy engine.
+- Hardware `service_interrupt` and `reset` remain boundary-only whole operations
+  and now reject an active instruction without touching state or the bus. Their
+  individual bus cycles, second-to-last-cycle polling, and NMI hijacking remain
+  explicitly unclaimed.
+- Split the NTSC scheduler into a failure-atomic one-CPU-cycle preflight/advance
+  API and added `NesMachine`, which owns the CPU, mapper-0 bus, and scheduler.
+  Every successful machine clock advances one CPU bus cycle, 12 master ticks,
+  and three PPU dots. Focused tests prove NOP completion on cycle two, report an
+  unsupported `$2000` write on its exact fourth cycle, and expose VBlank start
+  at master tick 328,728.
+- Fresh adversarial review found a lockstep defect when an unsupported opcode
+  had already been fetched: the bus changed while CPU/scheduler time remained
+  frozen. Unsupported fetches now consume one CPU cycle and return a typed clock
+  outcome, preventing replay at the same emulated time. Review-driven tests also
+  assert all-227 one-access-per-call bus regression, read-free CPU overflow,
+  machine timing-overflow atomicity, and the exact CPU/master/PPU state on the
+  VBlank delivery call. Independent bus-order evidence for the 76 undocumented
+  encodings is still open and explicitly unclaimed.
+- Pinned the planned MIT `perfect6502` oracle at commit
+  `09fc542877a84318291aa42dab143a3e2c3db974` and archive SHA-256
+  `594553a873d66a13e88c134495c9f55e064a36ba4670b07fba71f5047a77bdf5`.
+  No upstream source or result is committed, and no current claim relies on it.
 
 NES guidance intake and first NTSC timing checkpoint (2026-07-14, published in
 `04ae6d017e38296fc82dc1b2ebf1eb06d8eb6b63`):
@@ -245,8 +282,13 @@ nightly-2026-07-12 on 2026-07-14:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 97 passed, 0 failed.
-- Release tests: 97 passed, 0 failed; doc tests passed.
+- Debug tests: 106 passed, 0 failed.
+- Release tests: 106 passed, 0 failed; doc tests passed.
+- The 38 `cpu-6502` tests cover one-access-per-clock behavior, live operand
+  mutation, all-227 differential equivalence, active-instruction boundary
+  rejection, and all 190 pinned bus/state vectors.
+- The 20 `core-nes` tests cover the prior timing model plus exact CPU-cycle
+  scheduler progression, exact-cycle bus faults, and VBlank event delivery.
 - All six focused NTSC timing tests passed, including exact master-clock event
   timestamps, both VBlank edges, rendering-enabled 89,342/89,341-dot frame
   alternation, disabled-rendering full frames, and failure-atomic overflow.
@@ -369,9 +411,9 @@ Ubuntu 24.04.
   terminal APU writes are discarded without modeling APU state.
 - The runner uses the first reference row's raw cycle convention and never
   renormalizes later rows.
-- All 190 sampled instructions match their exact ordered bus traces, but the CPU
-  remains instruction-stepped and hardware interrupt/reset entry is not
-  bus-cycle verified. The complete machine is not cycle-accurate.
+- All 190 sampled instructions match their exact ordered bus traces through the
+  live one-cycle interface. Hardware interrupt/reset entry is not bus-cycle
+  verified, and the complete machine is not cycle-accurate.
 - The clean-room NROM cases are independent mapper-0 architectural evidence,
   not evidence for reset timing, interrupts, bus order, PPU/APU behavior, MMC1,
   or gameplay.
@@ -384,16 +426,15 @@ Ubuntu 24.04.
 
 ## Next action
 
-Turn the timing scaffold into a machine-level, cycle-stepped boundary without
-regressing the strict 190-vector instruction trace. First refactor the CPU so a
-driver can observe and advance one bus cycle at a time while retaining the
-existing whole-instruction `step` wrapper. Then introduce the machine-owned PPU
-register/address-space shell, route mirrored `$2000-$3FFF` CPU accesses, and
-connect timed VBlank/NMI behavior. Verify every increment with the existing
-state/bus oracles plus focused PPU register/timing tests. Rendering fetches,
-scrolling, sprites, DMA/APU, and the headless video/audio gate follow. Only after
-that mapper-0 whole-machine gate should MMC1 be implemented for the supplied
-target.
+First curate a minimal, license-preserving `perfect6502` harness from the pinned
+source and use it to verify live hardware IRQ/NMI/reset bus entry,
+second-to-last-cycle polling, and NMI hijacking. Then introduce the PPU
+register/address-space shell into the existing machine boundary, route mirrored
+`$2000-$3FFF` CPU accesses, and connect timed VBlank/NMI behavior. Verify every
+increment with the existing state/bus oracles plus focused PPU register/timing
+tests. Rendering fetches, scrolling, sprites, DMA/APU, and the headless
+video/audio gate follow. Only after that mapper-0 whole-machine gate should MMC1
+be implemented for the supplied target.
 
 ## Open decisions
 

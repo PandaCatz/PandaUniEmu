@@ -13,9 +13,12 @@ mapper and CLI. Architectural interrupt sampling and reset (edge NMI, level IRQ,
 the `I`-flag delay, and the seven-cycle sequences) are implemented. All 190
 pinned instruction bus traces match, and the first exact NTSC master-clock and
 PPU-dot timing checkpoint covers VBlank edges and the odd-frame skipped dot.
-Cycle-stepped CPU/device interleaving and PPU registers/rendering are next. The
-host frontend intentionally follows the verified headless NES path. See
-`CLAUDE.md` for evidence and exact next tasks.
+Instruction execution now yields after each live bus cycle, while the
+machine-owned boundary advances the scheduler by 12 master ticks / 3 PPU dots
+and exposes exact-cycle VBlank events and mapper-bus faults. Hardware
+interrupt/reset cycle entry and PPU registers/rendering are next. The host
+frontend intentionally follows the verified headless NES path. See `CLAUDE.md`
+for evidence and exact next tasks.
 
 Estimates below are ranges for one experienced developer working close to full
 time. Part-time work, learning the hardware while implementing it, broad game

@@ -136,33 +136,61 @@ impl NtscScheduler {
         &mut self.ppu
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_master_ticks_for_test(&mut self, master_ticks: u64) {
+        self.master_ticks = master_ticks;
+    }
+
+    /// Verifies that one CPU cycle fits without changing timing state.
+    pub fn check_cpu_cycle(&self) -> Result<(), TimingError> {
+        let mut next = self.clone();
+        let _ = next.clock_cpu_cycle()?;
+        Ok(())
+    }
+
+    /// Advances one CPU cycle (12 master ticks / three PPU dots).
+    /// At most one PPU timing edge can occur within those three dots.
+    pub fn advance_cpu_cycle(&mut self) -> Result<Option<TimedPpuEvent>, TimingError> {
+        let mut next = self.clone();
+        let event = next.clock_cpu_cycle()?;
+        *self = next;
+        Ok(event)
+    }
+
     pub fn advance_cpu_cycles(&mut self, cycles: u16) -> Result<Vec<TimedPpuEvent>, TimingError> {
         let mut next = self.clone();
         let mut events = Vec::new();
         for _ in 0..cycles {
-            next.clock_cpu_cycle(&mut events)?;
+            if let Some(event) = next.clock_cpu_cycle()? {
+                events.push(event);
+            }
         }
         *self = next;
         Ok(events)
     }
 
-    fn clock_cpu_cycle(&mut self, events: &mut Vec<TimedPpuEvent>) -> Result<(), TimingError> {
+    fn clock_cpu_cycle(&mut self) -> Result<Option<TimedPpuEvent>, TimingError> {
         let end = self
             .master_ticks
             .checked_add(MASTER_TICKS_PER_CPU_CYCLE)
             .ok_or(TimingError::MasterTickOverflow)?;
 
         let mut next_ppu = self.ppu;
+        let mut event = None;
         for dot in 0..(MASTER_TICKS_PER_CPU_CYCLE / MASTER_TICKS_PER_PPU_DOT) {
             let master_tick = self.master_ticks + dot * MASTER_TICKS_PER_PPU_DOT;
-            if let Some(event) = next_ppu.clock_dot()? {
-                events.push(TimedPpuEvent { master_tick, event });
+            if let Some(kind) = next_ppu.clock_dot()? {
+                debug_assert!(event.is_none());
+                event = Some(TimedPpuEvent {
+                    master_tick,
+                    event: kind,
+                });
             }
         }
 
         self.ppu = next_ppu;
         self.master_ticks = end;
-        Ok(())
+        Ok(event)
     }
 }
 

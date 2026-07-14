@@ -428,6 +428,145 @@ pub struct StepTrace {
     pub cycles: u8,
 }
 
+/// Result of one live CPU bus cycle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClockOutcome {
+    /// The current instruction has more bus cycles remaining.
+    InProgress,
+    /// The bus cycle completed the instruction.
+    InstructionComplete(StepTrace),
+    /// The opcode fetch consumed a cycle, but the byte is not implemented.
+    UnsupportedOpcode { pc: u16, opcode: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ActiveInstruction {
+    before: CpuState,
+    opcode: u8,
+    instruction: Instruction,
+    cycles: u8,
+    sequence: InstructionSequence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InstructionSequence {
+    Data(DataSequence),
+    Implied,
+    Branch(BranchStage),
+    Brk(BrkStage),
+    Jump(JumpStage),
+    Jsr(JsrStage),
+    Rti(RtiStage),
+    Rts(RtsStage),
+    Push(PushStage),
+    Pull(PullStage),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DataSequence {
+    kind: DataKind,
+    stage: DataStage,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DataKind {
+    Read,
+    Write,
+    Modify,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DataStage {
+    Immediate,
+    ZeroPageAddress,
+    ZeroPageIndexDummy { base: u8, index: u8 },
+    AbsoluteLow,
+    AbsoluteHigh { low: u8 },
+    IndexedIndirectBase,
+    IndexedIndirectDummy { base: u8 },
+    IndexedIndirectLow { pointer: u8 },
+    IndexedIndirectHigh { pointer: u8, low: u8 },
+    IndirectIndexedPointer,
+    IndirectIndexedLow { pointer: u8 },
+    IndirectIndexedHigh { base_low: u8, pointer: u8 },
+    IndexedDummy { address: u16, unfixed: u16 },
+    Access { address: u16 },
+    WriteOriginal { address: u16, value: u8 },
+    WriteModified { address: u16, value: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BranchStage {
+    Offset,
+    Taken { target: u16, unfixed: Option<u16> },
+    PageDummy { target: u16, unfixed: u16 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BrkStage {
+    Padding,
+    PushHigh,
+    PushLow,
+    PushStatus,
+    VectorLow,
+    VectorHigh { low: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum JumpStage {
+    Low,
+    AbsoluteHigh { low: u8 },
+    PointerHigh { low: u8 },
+    TargetLow { pointer: u16 },
+    TargetHigh { pointer: u16, low: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum JsrStage {
+    TargetLow,
+    DummyStack { low: u8 },
+    PushHigh { low: u8 },
+    PushLow { low: u8 },
+    TargetHigh { low: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RtiStage {
+    DummyNext,
+    DummyStack,
+    PullStatus,
+    PullLow,
+    PullHigh { low: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RtsStage {
+    DummyNext,
+    DummyStack,
+    PullLow,
+    PullHigh { low: u8 },
+    DummyReturn { address: u16 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PushStage {
+    DummyNext,
+    Value,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PullStage {
+    DummyNext,
+    DummyStack,
+    Value,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CycleProgress {
+    Continue(InstructionSequence),
+    Complete,
+}
+
 /// A hardware interrupt source sampled on the CPU's interrupt lines.
 ///
 /// `Nmi` is edge-triggered and cannot be masked. `Irq` is level-triggered and is
@@ -463,6 +602,7 @@ pub enum CpuError {
     UnsupportedOpcode { pc: u16, opcode: u8 },
     CycleCounterHeadroomExhausted { remaining: u8 },
     CycleOverflow,
+    OperationInProgress { operation: &'static str },
 }
 
 impl Display for CpuError {
@@ -476,6 +616,10 @@ impl Display for CpuError {
                 "CPU cycle counter has only {remaining} cycles of safe headroom"
             ),
             Self::CycleOverflow => formatter.write_str("CPU cycle counter overflowed"),
+            Self::OperationInProgress { operation } => write!(
+                formatter,
+                "cannot {operation} while a CPU instruction is in progress"
+            ),
         }
     }
 }
@@ -485,6 +629,7 @@ impl Error for CpuError {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cpu {
     state: CpuState,
+    active: Option<ActiveInstruction>,
     /// Last observed level of the NMI line (`true` when asserted), used to detect
     /// the high-to-low edge that latches an NMI.
     nmi_level: bool,
@@ -502,7 +647,7 @@ pub struct Cpu {
 
 // Eight is the largest cycle total among the documented instructions and the
 // stable undocumented encodings exercised by the accepted nestest trace.
-const MAX_INSTRUCTION_CYCLES: u64 = 8;
+pub const MAX_INSTRUCTION_CYCLES: u8 = 8;
 
 // Hardware interrupt entry (IRQ, NMI, and the BRK software interrupt) and the
 // reset sequence each take seven cycles at the architectural granularity this
@@ -516,6 +661,7 @@ const IRQ_VECTOR: u16 = 0xfffe;
 // Distinguishes operand reads, which only issue the fixed-up bus cycle on a page
 // cross, from writes and read-modify-writes, which always issue it. Indexed
 // addressing uses this to emit the correct dummy read.
+#[cfg(test)]
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Access {
     Read,
@@ -527,6 +673,7 @@ impl Cpu {
     pub fn new(state: CpuState) -> Self {
         let mut cpu = Self {
             state,
+            active: None,
             nmi_level: false,
             nmi_pending: false,
             irq_level: false,
@@ -543,6 +690,7 @@ impl Cpu {
 
     pub fn power_on(&mut self, bus: &mut impl Bus) -> Result<(), CpuError> {
         self.state = CpuState::default();
+        self.active = None;
         self.state.pc = read_u16(bus, RESET_VECTOR);
         self.state.total_cycles = 7;
         self.nmi_level = false;
@@ -597,6 +745,11 @@ impl Cpu {
         bus: &mut impl Bus,
         kind: Interrupt,
     ) -> Result<InterruptEntry, CpuError> {
+        if self.active.is_some() {
+            return Err(CpuError::OperationInProgress {
+                operation: "service an interrupt",
+            });
+        }
         if self
             .state
             .total_cycles
@@ -633,6 +786,9 @@ impl Cpu {
     /// preserved. The seven-cycle count is reserved before any bus access. Exact
     /// per-cycle reset bus reads are part of the deferred per-cycle milestone.
     pub fn reset(&mut self, bus: &mut impl Bus) -> Result<(), CpuError> {
+        if self.active.is_some() {
+            return Err(CpuError::OperationInProgress { operation: "reset" });
+        }
         if self
             .state
             .total_cycles
@@ -667,11 +823,70 @@ impl Cpu {
         self.state.pc = read_u16(bus, vector);
     }
 
+    /// Performs one live instruction bus cycle. Each successful call makes
+    /// exactly one bus read or write and increments `total_cycles` by one.
+    /// The caller may advance devices and drive interrupt lines between calls.
+    pub fn clock(&mut self, bus: &mut impl Bus) -> Result<ClockOutcome, CpuError> {
+        let Some(active) = self.active.take() else {
+            if self
+                .state
+                .total_cycles
+                .checked_add(u64::from(MAX_INSTRUCTION_CYCLES))
+                .is_none()
+            {
+                return Err(CpuError::CycleCounterHeadroomExhausted {
+                    remaining: (u64::MAX - self.state.total_cycles) as u8,
+                });
+            }
+
+            let before = self.state;
+            let opcode = bus.read(self.state.pc);
+            self.state.pc = self.state.pc.wrapping_add(1);
+            self.state.total_cycles += 1;
+            let Some(instruction) = decode(opcode) else {
+                return Ok(ClockOutcome::UnsupportedOpcode {
+                    pc: before.pc,
+                    opcode,
+                });
+            };
+            self.active = Some(ActiveInstruction {
+                before,
+                opcode,
+                instruction,
+                cycles: 1,
+                sequence: Self::sequence_for(instruction),
+            });
+            return Ok(ClockOutcome::InProgress);
+        };
+
+        Ok(self.clock_active(bus, active))
+    }
+
+    /// Executes through the end of one instruction. If an instruction was
+    /// already started with [`Cpu::clock`], this finishes that same instruction.
     pub fn step(&mut self, bus: &mut impl Bus) -> Result<StepTrace, CpuError> {
+        loop {
+            match self.clock(bus)? {
+                ClockOutcome::InProgress => {}
+                ClockOutcome::InstructionComplete(trace) => return Ok(trace),
+                ClockOutcome::UnsupportedOpcode { pc, opcode } => {
+                    return Err(CpuError::UnsupportedOpcode { pc, opcode });
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn step_legacy(&mut self, bus: &mut impl Bus) -> Result<StepTrace, CpuError> {
+        if self.active.is_some() {
+            return Err(CpuError::OperationInProgress {
+                operation: "run the legacy instruction path",
+            });
+        }
         if self
             .state
             .total_cycles
-            .checked_add(MAX_INSTRUCTION_CYCLES)
+            .checked_add(u64::from(MAX_INSTRUCTION_CYCLES))
             .is_none()
         {
             return Err(CpuError::CycleCounterHeadroomExhausted {
@@ -696,19 +911,7 @@ impl Cpu {
             .total_cycles
             .checked_add(u64::from(cycles))
             .ok_or(CpuError::CycleOverflow)?;
-        self.normalize_status();
-        // Sample the interrupt poll for this instruction. `CLI`, `SEI`, and `PLP`
-        // change the `I` flag on their final cycle, after the poll, so the poll
-        // observes the pre-instruction value; every other instruction (including
-        // `RTI`, which takes effect immediately) is observed after its change.
-        self.poll_interrupt_disable = if matches!(
-            instruction.mnemonic,
-            Mnemonic::Cli | Mnemonic::Sei | Mnemonic::Plp
-        ) {
-            before.status & FLAG_INTERRUPT_DISABLE != 0
-        } else {
-            self.state.status & FLAG_INTERRUPT_DISABLE != 0
-        };
+        self.finish_poll(before, instruction);
         Ok(StepTrace {
             before,
             after: self.state,
@@ -718,6 +921,703 @@ impl Cpu {
         })
     }
 
+    fn sequence_for(instruction: Instruction) -> InstructionSequence {
+        use Mnemonic::{
+            Bcc, Bcs, Beq, Bmi, Bne, Bpl, Brk, Bvc, Bvs, Jmp, Jsr, Pha, Php, Pla, Plp, Rti, Rts,
+        };
+
+        match instruction.mnemonic {
+            Bcc | Bcs | Beq | Bmi | Bne | Bpl | Bvc | Bvs => {
+                InstructionSequence::Branch(BranchStage::Offset)
+            }
+            Brk => InstructionSequence::Brk(BrkStage::Padding),
+            Jmp => InstructionSequence::Jump(JumpStage::Low),
+            Jsr => InstructionSequence::Jsr(JsrStage::TargetLow),
+            Rti => InstructionSequence::Rti(RtiStage::DummyNext),
+            Rts => InstructionSequence::Rts(RtsStage::DummyNext),
+            Pha | Php => InstructionSequence::Push(PushStage::DummyNext),
+            Pla | Plp => InstructionSequence::Pull(PullStage::DummyNext),
+            _ if matches!(
+                instruction.mode,
+                AddressingMode::Implied | AddressingMode::Accumulator
+            ) =>
+            {
+                InstructionSequence::Implied
+            }
+            _ => InstructionSequence::Data(DataSequence {
+                kind: Self::data_kind(instruction.mnemonic),
+                stage: Self::data_start(instruction.mode),
+            }),
+        }
+    }
+
+    const fn data_kind(mnemonic: Mnemonic) -> DataKind {
+        use Mnemonic::{
+            Asl, Dcp, Dec, Inc, Isc, Lsr, Rla, Rol, Ror, Rra, Sax, Slo, Sre, Sta, Stx, Sty,
+        };
+        match mnemonic {
+            Sax | Sta | Stx | Sty => DataKind::Write,
+            Asl | Lsr | Rol | Ror | Inc | Dec | Dcp | Isc | Slo | Rla | Sre | Rra => {
+                DataKind::Modify
+            }
+            _ => DataKind::Read,
+        }
+    }
+
+    const fn data_start(mode: AddressingMode) -> DataStage {
+        match mode {
+            AddressingMode::Immediate => DataStage::Immediate,
+            AddressingMode::ZeroPage | AddressingMode::ZeroPageX | AddressingMode::ZeroPageY => {
+                DataStage::ZeroPageAddress
+            }
+            AddressingMode::Absolute | AddressingMode::AbsoluteX | AddressingMode::AbsoluteY => {
+                DataStage::AbsoluteLow
+            }
+            AddressingMode::IndexedIndirect => DataStage::IndexedIndirectBase,
+            AddressingMode::IndirectIndexed => DataStage::IndirectIndexedPointer,
+            _ => unreachable!(),
+        }
+    }
+
+    fn clock_active(&mut self, bus: &mut impl Bus, mut active: ActiveInstruction) -> ClockOutcome {
+        let progress = match active.sequence {
+            InstructionSequence::Data(data) => self.clock_data(bus, active.instruction, data),
+            InstructionSequence::Implied => {
+                let _ = bus.read(self.state.pc);
+                self.apply_implied(active.instruction);
+                CycleProgress::Complete
+            }
+            InstructionSequence::Branch(stage) => {
+                self.clock_branch(bus, active.instruction.mnemonic, stage)
+            }
+            InstructionSequence::Brk(stage) => self.clock_brk(bus, stage),
+            InstructionSequence::Jump(stage) => {
+                self.clock_jump(bus, active.instruction.mode, stage)
+            }
+            InstructionSequence::Jsr(stage) => self.clock_jsr(bus, stage),
+            InstructionSequence::Rti(stage) => self.clock_rti(bus, stage),
+            InstructionSequence::Rts(stage) => self.clock_rts(bus, stage),
+            InstructionSequence::Push(stage) => {
+                self.clock_push(bus, active.instruction.mnemonic, stage)
+            }
+            InstructionSequence::Pull(stage) => {
+                self.clock_pull(bus, active.instruction.mnemonic, stage)
+            }
+        };
+
+        self.state.total_cycles += 1;
+        active.cycles += 1;
+        match progress {
+            CycleProgress::Continue(sequence) => {
+                active.sequence = sequence;
+                self.active = Some(active);
+                ClockOutcome::InProgress
+            }
+            CycleProgress::Complete => {
+                self.finish_poll(active.before, active.instruction);
+                ClockOutcome::InstructionComplete(StepTrace {
+                    before: active.before,
+                    after: self.state,
+                    opcode: active.opcode,
+                    instruction: active.instruction,
+                    cycles: active.cycles,
+                })
+            }
+        }
+    }
+
+    fn finish_poll(&mut self, before: CpuState, instruction: Instruction) {
+        self.normalize_status();
+        self.poll_interrupt_disable = if matches!(
+            instruction.mnemonic,
+            Mnemonic::Cli | Mnemonic::Sei | Mnemonic::Plp
+        ) {
+            before.status & FLAG_INTERRUPT_DISABLE != 0
+        } else {
+            self.state.status & FLAG_INTERRUPT_DISABLE != 0
+        };
+    }
+
+    const fn continue_data(kind: DataKind, stage: DataStage) -> CycleProgress {
+        CycleProgress::Continue(InstructionSequence::Data(DataSequence { kind, stage }))
+    }
+
+    fn clock_data(
+        &mut self,
+        bus: &mut impl Bus,
+        instruction: Instruction,
+        data: DataSequence,
+    ) -> CycleProgress {
+        match data.stage {
+            DataStage::Immediate => {
+                let value = self.fetch(bus);
+                self.apply_read(instruction.mnemonic, value);
+                CycleProgress::Complete
+            }
+            DataStage::ZeroPageAddress => {
+                let base = self.fetch(bus);
+                match instruction.mode {
+                    AddressingMode::ZeroPage => Self::continue_data(
+                        data.kind,
+                        DataStage::Access {
+                            address: u16::from(base),
+                        },
+                    ),
+                    AddressingMode::ZeroPageX => Self::continue_data(
+                        data.kind,
+                        DataStage::ZeroPageIndexDummy {
+                            base,
+                            index: self.state.x,
+                        },
+                    ),
+                    AddressingMode::ZeroPageY => Self::continue_data(
+                        data.kind,
+                        DataStage::ZeroPageIndexDummy {
+                            base,
+                            index: self.state.y,
+                        },
+                    ),
+                    _ => unreachable!(),
+                }
+            }
+            DataStage::ZeroPageIndexDummy { base, index } => {
+                let _ = bus.read(u16::from(base));
+                Self::continue_data(
+                    data.kind,
+                    DataStage::Access {
+                        address: u16::from(base.wrapping_add(index)),
+                    },
+                )
+            }
+            DataStage::AbsoluteLow => {
+                let low = self.fetch(bus);
+                Self::continue_data(data.kind, DataStage::AbsoluteHigh { low })
+            }
+            DataStage::AbsoluteHigh { low } => {
+                let high = self.fetch(bus);
+                let base = u16::from_le_bytes([low, high]);
+                match instruction.mode {
+                    AddressingMode::Absolute => {
+                        Self::continue_data(data.kind, DataStage::Access { address: base })
+                    }
+                    AddressingMode::AbsoluteX | AddressingMode::AbsoluteY => {
+                        let index = if instruction.mode == AddressingMode::AbsoluteX {
+                            self.state.x
+                        } else {
+                            self.state.y
+                        };
+                        self.indexed_data_stage(data.kind, base, index)
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            DataStage::IndexedIndirectBase => {
+                let base = self.fetch(bus);
+                Self::continue_data(data.kind, DataStage::IndexedIndirectDummy { base })
+            }
+            DataStage::IndexedIndirectDummy { base } => {
+                let _ = bus.read(u16::from(base));
+                Self::continue_data(
+                    data.kind,
+                    DataStage::IndexedIndirectLow {
+                        pointer: base.wrapping_add(self.state.x),
+                    },
+                )
+            }
+            DataStage::IndexedIndirectLow { pointer } => {
+                let low = bus.read(u16::from(pointer));
+                Self::continue_data(data.kind, DataStage::IndexedIndirectHigh { pointer, low })
+            }
+            DataStage::IndexedIndirectHigh { pointer, low } => {
+                let high = bus.read(u16::from(pointer.wrapping_add(1)));
+                Self::continue_data(
+                    data.kind,
+                    DataStage::Access {
+                        address: u16::from_le_bytes([low, high]),
+                    },
+                )
+            }
+            DataStage::IndirectIndexedPointer => {
+                let pointer = self.fetch(bus);
+                Self::continue_data(data.kind, DataStage::IndirectIndexedLow { pointer })
+            }
+            DataStage::IndirectIndexedLow { pointer } => {
+                let base_low = bus.read(u16::from(pointer));
+                Self::continue_data(
+                    data.kind,
+                    DataStage::IndirectIndexedHigh { base_low, pointer },
+                )
+            }
+            DataStage::IndirectIndexedHigh { base_low, pointer } => {
+                let high = bus.read(u16::from(pointer.wrapping_add(1)));
+                let base = u16::from_le_bytes([base_low, high]);
+                self.indexed_data_stage(data.kind, base, self.state.y)
+            }
+            DataStage::IndexedDummy { address, unfixed } => {
+                let _ = bus.read(unfixed);
+                Self::continue_data(data.kind, DataStage::Access { address })
+            }
+            DataStage::Access { address } => match data.kind {
+                DataKind::Read => {
+                    let value = bus.read(address);
+                    self.apply_read(instruction.mnemonic, value);
+                    CycleProgress::Complete
+                }
+                DataKind::Write => {
+                    bus.write(address, self.write_value(instruction.mnemonic));
+                    CycleProgress::Complete
+                }
+                DataKind::Modify => {
+                    let value = bus.read(address);
+                    Self::continue_data(data.kind, DataStage::WriteOriginal { address, value })
+                }
+            },
+            DataStage::WriteOriginal { address, value } => {
+                bus.write(address, value);
+                Self::continue_data(data.kind, DataStage::WriteModified { address, value })
+            }
+            DataStage::WriteModified { address, value } => {
+                let result = self.apply_modify(instruction.mnemonic, value);
+                bus.write(address, result);
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn indexed_data_stage(&self, kind: DataKind, base: u16, index: u8) -> CycleProgress {
+        let address = base.wrapping_add(u16::from(index));
+        if page_crossed(base, address) || kind != DataKind::Read {
+            let unfixed = (base & 0xff00) | u16::from((base as u8).wrapping_add(index));
+            Self::continue_data(kind, DataStage::IndexedDummy { address, unfixed })
+        } else {
+            Self::continue_data(kind, DataStage::Access { address })
+        }
+    }
+
+    fn apply_read(&mut self, mnemonic: Mnemonic, value: u8) {
+        use Mnemonic::{Adc, And, Bit, Cmp, Cpx, Cpy, Eor, Lax, Lda, Ldx, Ldy, Nop, Ora, Sbc};
+        match mnemonic {
+            Ora => {
+                self.state.a |= value;
+                self.update_zero_negative(self.state.a);
+            }
+            And => {
+                self.state.a &= value;
+                self.update_zero_negative(self.state.a);
+            }
+            Eor => {
+                self.state.a ^= value;
+                self.update_zero_negative(self.state.a);
+            }
+            Adc => self.adc(value),
+            Sbc => self.adc(value ^ 0xff),
+            Lda => {
+                self.state.a = value;
+                self.update_zero_negative(value);
+            }
+            Lax => {
+                self.state.a = value;
+                self.state.x = value;
+                self.update_zero_negative(value);
+            }
+            Ldx => {
+                self.state.x = value;
+                self.update_zero_negative(value);
+            }
+            Ldy => {
+                self.state.y = value;
+                self.update_zero_negative(value);
+            }
+            Cmp => self.compare(self.state.a, value),
+            Cpx => self.compare(self.state.x, value),
+            Cpy => self.compare(self.state.y, value),
+            Bit => {
+                self.set_flag(FLAG_ZERO, self.state.a & value == 0);
+                self.set_flag(FLAG_OVERFLOW, value & FLAG_OVERFLOW != 0);
+                self.set_flag(FLAG_NEGATIVE, value & FLAG_NEGATIVE != 0);
+            }
+            Nop => {}
+            _ => unreachable!(),
+        }
+    }
+
+    const fn write_value(&self, mnemonic: Mnemonic) -> u8 {
+        match mnemonic {
+            Mnemonic::Sta => self.state.a,
+            Mnemonic::Stx => self.state.x,
+            Mnemonic::Sty => self.state.y,
+            Mnemonic::Sax => self.state.a & self.state.x,
+            _ => unreachable!(),
+        }
+    }
+
+    fn apply_modify(&mut self, mnemonic: Mnemonic, value: u8) -> u8 {
+        use Mnemonic::{Asl, Dcp, Dec, Inc, Isc, Lsr, Rla, Rol, Ror, Rra, Slo, Sre};
+        let operation = match mnemonic {
+            Dcp => Dec,
+            Isc => Inc,
+            Slo => Asl,
+            Rla => Rol,
+            Sre => Lsr,
+            Rra => Ror,
+            other => other,
+        };
+        let result = self.modify(operation, value);
+        match mnemonic {
+            Dcp => self.compare(self.state.a, result),
+            Isc => self.adc(result ^ 0xff),
+            Slo => {
+                self.state.a |= result;
+                self.update_zero_negative(self.state.a);
+            }
+            Rla => {
+                self.state.a &= result;
+                self.update_zero_negative(self.state.a);
+            }
+            Sre => {
+                self.state.a ^= result;
+                self.update_zero_negative(self.state.a);
+            }
+            Rra => self.adc(result),
+            _ => {}
+        }
+        result
+    }
+
+    fn apply_implied(&mut self, instruction: Instruction) {
+        use Mnemonic::{
+            Asl, Clc, Cld, Cli, Clv, Dex, Dey, Inx, Iny, Lsr, Nop, Rol, Ror, Sec, Sed, Sei, Tax,
+            Tay, Tsx, Txa, Txs, Tya,
+        };
+        match instruction.mnemonic {
+            Asl | Lsr | Rol | Ror if instruction.mode == AddressingMode::Accumulator => {
+                self.state.a = self.apply_modify(instruction.mnemonic, self.state.a);
+            }
+            Clc => self.set_flag(FLAG_CARRY, false),
+            Cld => self.set_flag(FLAG_DECIMAL, false),
+            Cli => self.set_flag(FLAG_INTERRUPT_DISABLE, false),
+            Clv => self.set_flag(FLAG_OVERFLOW, false),
+            Sec => self.set_flag(FLAG_CARRY, true),
+            Sed => self.set_flag(FLAG_DECIMAL, true),
+            Sei => self.set_flag(FLAG_INTERRUPT_DISABLE, true),
+            Dex => {
+                self.state.x = self.state.x.wrapping_sub(1);
+                self.update_zero_negative(self.state.x);
+            }
+            Dey => {
+                self.state.y = self.state.y.wrapping_sub(1);
+                self.update_zero_negative(self.state.y);
+            }
+            Inx => {
+                self.state.x = self.state.x.wrapping_add(1);
+                self.update_zero_negative(self.state.x);
+            }
+            Iny => {
+                self.state.y = self.state.y.wrapping_add(1);
+                self.update_zero_negative(self.state.y);
+            }
+            Tax => {
+                self.state.x = self.state.a;
+                self.update_zero_negative(self.state.x);
+            }
+            Tay => {
+                self.state.y = self.state.a;
+                self.update_zero_negative(self.state.y);
+            }
+            Tsx => {
+                self.state.x = self.state.sp;
+                self.update_zero_negative(self.state.x);
+            }
+            Txa => {
+                self.state.a = self.state.x;
+                self.update_zero_negative(self.state.a);
+            }
+            Tya => {
+                self.state.a = self.state.y;
+                self.update_zero_negative(self.state.a);
+            }
+            Txs => self.state.sp = self.state.x,
+            Nop => {}
+            _ => unreachable!(),
+        }
+    }
+
+    fn branch_condition(&self, mnemonic: Mnemonic) -> bool {
+        match mnemonic {
+            Mnemonic::Bcc => !self.flag(FLAG_CARRY),
+            Mnemonic::Bcs => self.flag(FLAG_CARRY),
+            Mnemonic::Beq => self.flag(FLAG_ZERO),
+            Mnemonic::Bmi => self.flag(FLAG_NEGATIVE),
+            Mnemonic::Bne => !self.flag(FLAG_ZERO),
+            Mnemonic::Bpl => !self.flag(FLAG_NEGATIVE),
+            Mnemonic::Bvc => !self.flag(FLAG_OVERFLOW),
+            Mnemonic::Bvs => self.flag(FLAG_OVERFLOW),
+            _ => unreachable!(),
+        }
+    }
+
+    fn clock_branch(
+        &mut self,
+        bus: &mut impl Bus,
+        mnemonic: Mnemonic,
+        stage: BranchStage,
+    ) -> CycleProgress {
+        match stage {
+            BranchStage::Offset => {
+                let offset = self.fetch(bus) as i8;
+                if !self.branch_condition(mnemonic) {
+                    return CycleProgress::Complete;
+                }
+                let before = self.state.pc;
+                let target = before.wrapping_add_signed(i16::from(offset));
+                let unfixed = page_crossed(before, target).then_some(
+                    (before & 0xff00) | u16::from((before as u8).wrapping_add(offset as u8)),
+                );
+                CycleProgress::Continue(InstructionSequence::Branch(BranchStage::Taken {
+                    target,
+                    unfixed,
+                }))
+            }
+            BranchStage::Taken { target, unfixed } => {
+                let _ = bus.read(self.state.pc);
+                if let Some(unfixed) = unfixed {
+                    CycleProgress::Continue(InstructionSequence::Branch(BranchStage::PageDummy {
+                        target,
+                        unfixed,
+                    }))
+                } else {
+                    self.state.pc = target;
+                    CycleProgress::Complete
+                }
+            }
+            BranchStage::PageDummy { target, unfixed } => {
+                let _ = bus.read(unfixed);
+                self.state.pc = target;
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn clock_brk(&mut self, bus: &mut impl Bus, stage: BrkStage) -> CycleProgress {
+        match stage {
+            BrkStage::Padding => {
+                let _ = self.fetch(bus);
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::PushHigh))
+            }
+            BrkStage::PushHigh => {
+                self.push_cycle(bus, self.state.pc.to_le_bytes()[1]);
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::PushLow))
+            }
+            BrkStage::PushLow => {
+                self.push_cycle(bus, self.state.pc.to_le_bytes()[0]);
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::PushStatus))
+            }
+            BrkStage::PushStatus => {
+                self.push_cycle(bus, self.state.status | FLAG_BREAK | FLAG_UNUSED);
+                self.set_flag(FLAG_INTERRUPT_DISABLE, true);
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::VectorLow))
+            }
+            BrkStage::VectorLow => {
+                let low = bus.read(IRQ_VECTOR);
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::VectorHigh { low }))
+            }
+            BrkStage::VectorHigh { low } => {
+                let high = bus.read(IRQ_VECTOR.wrapping_add(1));
+                self.state.pc = u16::from_le_bytes([low, high]);
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn clock_jump(
+        &mut self,
+        bus: &mut impl Bus,
+        mode: AddressingMode,
+        stage: JumpStage,
+    ) -> CycleProgress {
+        match stage {
+            JumpStage::Low => {
+                let low = self.fetch(bus);
+                let next = if mode == AddressingMode::Indirect {
+                    JumpStage::PointerHigh { low }
+                } else {
+                    JumpStage::AbsoluteHigh { low }
+                };
+                CycleProgress::Continue(InstructionSequence::Jump(next))
+            }
+            JumpStage::AbsoluteHigh { low } => {
+                let high = self.fetch(bus);
+                self.state.pc = u16::from_le_bytes([low, high]);
+                CycleProgress::Complete
+            }
+            JumpStage::PointerHigh { low } => {
+                let high = self.fetch(bus);
+                CycleProgress::Continue(InstructionSequence::Jump(JumpStage::TargetLow {
+                    pointer: u16::from_le_bytes([low, high]),
+                }))
+            }
+            JumpStage::TargetLow { pointer } => {
+                let low = bus.read(pointer);
+                CycleProgress::Continue(InstructionSequence::Jump(JumpStage::TargetHigh {
+                    pointer,
+                    low,
+                }))
+            }
+            JumpStage::TargetHigh { pointer, low } => {
+                let high_address = (pointer & 0xff00) | u16::from((pointer as u8).wrapping_add(1));
+                let high = bus.read(high_address);
+                self.state.pc = u16::from_le_bytes([low, high]);
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn clock_jsr(&mut self, bus: &mut impl Bus, stage: JsrStage) -> CycleProgress {
+        match stage {
+            JsrStage::TargetLow => {
+                let low = self.fetch(bus);
+                CycleProgress::Continue(InstructionSequence::Jsr(JsrStage::DummyStack { low }))
+            }
+            JsrStage::DummyStack { low } => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                CycleProgress::Continue(InstructionSequence::Jsr(JsrStage::PushHigh { low }))
+            }
+            JsrStage::PushHigh { low } => {
+                self.push_cycle(bus, self.state.pc.to_le_bytes()[1]);
+                CycleProgress::Continue(InstructionSequence::Jsr(JsrStage::PushLow { low }))
+            }
+            JsrStage::PushLow { low } => {
+                self.push_cycle(bus, self.state.pc.to_le_bytes()[0]);
+                CycleProgress::Continue(InstructionSequence::Jsr(JsrStage::TargetHigh { low }))
+            }
+            JsrStage::TargetHigh { low } => {
+                let high = self.fetch(bus);
+                self.state.pc = u16::from_le_bytes([low, high]);
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn clock_rti(&mut self, bus: &mut impl Bus, stage: RtiStage) -> CycleProgress {
+        match stage {
+            RtiStage::DummyNext => {
+                let _ = bus.read(self.state.pc);
+                CycleProgress::Continue(InstructionSequence::Rti(RtiStage::DummyStack))
+            }
+            RtiStage::DummyStack => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                CycleProgress::Continue(InstructionSequence::Rti(RtiStage::PullStatus))
+            }
+            RtiStage::PullStatus => {
+                self.state.status = (self.pull_cycle(bus) & !FLAG_BREAK) | FLAG_UNUSED;
+                CycleProgress::Continue(InstructionSequence::Rti(RtiStage::PullLow))
+            }
+            RtiStage::PullLow => {
+                let low = self.pull_cycle(bus);
+                CycleProgress::Continue(InstructionSequence::Rti(RtiStage::PullHigh { low }))
+            }
+            RtiStage::PullHigh { low } => {
+                let high = self.pull_cycle(bus);
+                self.state.pc = u16::from_le_bytes([low, high]);
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn clock_rts(&mut self, bus: &mut impl Bus, stage: RtsStage) -> CycleProgress {
+        match stage {
+            RtsStage::DummyNext => {
+                let _ = bus.read(self.state.pc);
+                CycleProgress::Continue(InstructionSequence::Rts(RtsStage::DummyStack))
+            }
+            RtsStage::DummyStack => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                CycleProgress::Continue(InstructionSequence::Rts(RtsStage::PullLow))
+            }
+            RtsStage::PullLow => {
+                let low = self.pull_cycle(bus);
+                CycleProgress::Continue(InstructionSequence::Rts(RtsStage::PullHigh { low }))
+            }
+            RtsStage::PullHigh { low } => {
+                let high = self.pull_cycle(bus);
+                CycleProgress::Continue(InstructionSequence::Rts(RtsStage::DummyReturn {
+                    address: u16::from_le_bytes([low, high]),
+                }))
+            }
+            RtsStage::DummyReturn { address } => {
+                let _ = bus.read(address);
+                self.state.pc = address.wrapping_add(1);
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn clock_push(
+        &mut self,
+        bus: &mut impl Bus,
+        mnemonic: Mnemonic,
+        stage: PushStage,
+    ) -> CycleProgress {
+        match stage {
+            PushStage::DummyNext => {
+                let _ = bus.read(self.state.pc);
+                CycleProgress::Continue(InstructionSequence::Push(PushStage::Value))
+            }
+            PushStage::Value => {
+                let value = match mnemonic {
+                    Mnemonic::Pha => self.state.a,
+                    Mnemonic::Php => self.state.status | FLAG_BREAK | FLAG_UNUSED,
+                    _ => unreachable!(),
+                };
+                self.push_cycle(bus, value);
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn clock_pull(
+        &mut self,
+        bus: &mut impl Bus,
+        mnemonic: Mnemonic,
+        stage: PullStage,
+    ) -> CycleProgress {
+        match stage {
+            PullStage::DummyNext => {
+                let _ = bus.read(self.state.pc);
+                CycleProgress::Continue(InstructionSequence::Pull(PullStage::DummyStack))
+            }
+            PullStage::DummyStack => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                CycleProgress::Continue(InstructionSequence::Pull(PullStage::Value))
+            }
+            PullStage::Value => {
+                let value = self.pull_cycle(bus);
+                match mnemonic {
+                    Mnemonic::Pla => {
+                        self.state.a = value;
+                        self.update_zero_negative(value);
+                    }
+                    Mnemonic::Plp => {
+                        self.state.status = (value & !FLAG_BREAK) | FLAG_UNUSED;
+                    }
+                    _ => unreachable!(),
+                }
+                CycleProgress::Complete
+            }
+        }
+    }
+
+    fn push_cycle(&mut self, bus: &mut impl Bus, value: u8) {
+        bus.write(0x0100 | u16::from(self.state.sp), value);
+        self.state.sp = self.state.sp.wrapping_sub(1);
+    }
+
+    fn pull_cycle(&mut self, bus: &mut impl Bus) -> u8 {
+        self.state.sp = self.state.sp.wrapping_add(1);
+        bus.read(0x0100 | u16::from(self.state.sp))
+    }
+
+    #[cfg(test)]
     fn execute(&mut self, bus: &mut impl Bus, instruction: Instruction) -> u8 {
         // A 6502 always performs a second read even for one-byte implied and
         // accumulator instructions: on their second cycle it reads the byte after
@@ -1014,12 +1914,14 @@ impl Cpu {
         value
     }
 
+    #[cfg(test)]
     fn fetch_u16(&mut self, bus: &mut impl Bus) -> u16 {
         let low = self.fetch(bus);
         let high = self.fetch(bus);
         u16::from_le_bytes([low, high])
     }
 
+    #[cfg(test)]
     fn resolve_address(
         &mut self,
         bus: &mut impl Bus,
@@ -1068,6 +1970,7 @@ impl Cpu {
     // un-fixed address (the base high byte kept while the low byte is added
     // without carry). Reads only issue that cycle on a page cross; writes and
     // read-modify-writes always issue it.
+    #[cfg(test)]
     fn indexed_address(
         &mut self,
         bus: &mut impl Bus,
@@ -1084,6 +1987,7 @@ impl Cpu {
         (address, crossed)
     }
 
+    #[cfg(test)]
     fn read_operand(&mut self, bus: &mut impl Bus, mode: AddressingMode) -> (u8, bool) {
         if mode == AddressingMode::Immediate {
             return (self.fetch(bus), false);
@@ -1140,6 +2044,7 @@ impl Cpu {
         self.update_zero_negative(result);
     }
 
+    #[cfg(test)]
     fn branch(&mut self, bus: &mut impl Bus, condition: bool) -> u8 {
         let offset = self.fetch(bus) as i8;
         if !condition {
@@ -1166,6 +2071,7 @@ impl Cpu {
         self.state.sp = self.state.sp.wrapping_sub(1);
     }
 
+    #[cfg(test)]
     fn pop(&mut self, bus: &mut impl Bus) -> u8 {
         self.state.sp = self.state.sp.wrapping_add(1);
         bus.read(0x0100 | u16::from(self.state.sp))
@@ -1177,6 +2083,7 @@ impl Cpu {
         self.push(bus, low);
     }
 
+    #[cfg(test)]
     fn pop_u16(&mut self, bus: &mut impl Bus) -> u16 {
         let low = self.pop(bus);
         let high = self.pop(bus);
@@ -1211,12 +2118,14 @@ fn read_u16(bus: &mut impl Bus, address: u16) -> u16 {
     u16::from_le_bytes([low, high])
 }
 
+#[cfg(test)]
 fn read_u16_zero_page(bus: &mut impl Bus, address: u8) -> u16 {
     let low = bus.read(u16::from(address));
     let high = bus.read(u16::from(address.wrapping_add(1)));
     u16::from_le_bytes([low, high])
 }
 
+#[cfg(test)]
 fn read_u16_indirect_bug(bus: &mut impl Bus, address: u16) -> u16 {
     let low = bus.read(address);
     let high_address = (address & 0xff00) | u16::from((address as u8).wrapping_add(1));
@@ -1236,6 +2145,7 @@ mod tests {
     use super::singlestep_vectors::{CycleKind, Snapshot, UPSTREAM_COMMIT, VECTORS, Vector};
     use super::*;
 
+    #[derive(Clone)]
     struct Ram {
         data: Vec<u8>,
     }
@@ -1425,6 +2335,130 @@ mod tests {
     }
 
     #[test]
+    fn cycle_engine_matches_the_legacy_path_for_every_supported_opcode() {
+        for opcode in 0_u8..=u8::MAX {
+            if decode(opcode).is_none() {
+                continue;
+            }
+            let mut cycle_ram = RecordingRam {
+                data: vec![0; 65_536],
+                trace: Vec::new(),
+            };
+            cycle_ram.data[0x8000] = opcode;
+            let mut legacy_ram = RecordingRam {
+                data: cycle_ram.data.clone(),
+                trace: Vec::new(),
+            };
+            let mut cycle_cpu = Cpu::new(CpuState::at(0x8000));
+            let mut legacy_cpu = cycle_cpu.clone();
+
+            let mut calls = 0_u8;
+            let cycle_trace = loop {
+                let before_accesses = cycle_ram.trace.len();
+                let outcome = cycle_cpu
+                    .clock(&mut cycle_ram)
+                    .unwrap_or_else(|error| panic!("cycle opcode ${opcode:02X}: {error}"));
+                calls += 1;
+                assert_eq!(
+                    cycle_ram.trace.len(),
+                    before_accesses + 1,
+                    "opcode ${opcode:02X} clock call {calls}"
+                );
+                match outcome {
+                    ClockOutcome::InProgress => {}
+                    ClockOutcome::InstructionComplete(trace) => break trace,
+                    ClockOutcome::UnsupportedOpcode { .. } => {
+                        panic!("decoded opcode ${opcode:02X} became unsupported")
+                    }
+                }
+            };
+            let legacy_trace = legacy_cpu
+                .step_legacy(&mut legacy_ram)
+                .unwrap_or_else(|error| panic!("legacy opcode ${opcode:02X}: {error}"));
+
+            assert_eq!(calls, cycle_trace.cycles, "opcode ${opcode:02X} calls");
+            assert_eq!(cycle_trace, legacy_trace, "opcode ${opcode:02X}");
+            assert_eq!(cycle_cpu, legacy_cpu, "opcode ${opcode:02X} CPU");
+            assert_eq!(cycle_ram.data, legacy_ram.data, "opcode ${opcode:02X} RAM");
+            assert_eq!(
+                cycle_ram.trace, legacy_ram.trace,
+                "opcode ${opcode:02X} bus regression"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_opcode_fetch_is_a_live_consumed_cycle() {
+        let mut ram = RecordingRam {
+            data: vec![0; 65_536],
+            trace: Vec::new(),
+        };
+        ram.data[0x8000] = 0x02;
+        let mut cpu = Cpu::new(CpuState::at(0x8000));
+
+        assert_eq!(
+            cpu.clock(&mut ram),
+            Ok(ClockOutcome::UnsupportedOpcode {
+                pc: 0x8000,
+                opcode: 0x02,
+            })
+        );
+        assert_eq!(ram.trace, vec![(0x8000, 0x02, CycleKind::Read)]);
+        assert_eq!(cpu.state().pc, 0x8001);
+        assert_eq!(cpu.state().total_cycles, 1);
+    }
+
+    #[test]
+    fn later_operand_reads_observe_bus_changes_between_clock_calls() {
+        let mut ram = Ram::new();
+        ram.data[0x8000..0x8003].copy_from_slice(&[0xad, 0x34, 0x12]);
+        ram.data[0x1234] = 0x11;
+        let mut cpu = Cpu::new(CpuState::at(0x8000));
+
+        for expected_cycles in 1..=3 {
+            assert_eq!(cpu.clock(&mut ram), Ok(ClockOutcome::InProgress));
+            assert_eq!(cpu.state().total_cycles, expected_cycles);
+        }
+        ram.data[0x1234] = 0xa5;
+        let outcome = cpu.clock(&mut ram).expect("final LDA cycle succeeds");
+        let ClockOutcome::InstructionComplete(trace) = outcome else {
+            panic!("absolute LDA must finish on its fourth cycle");
+        };
+        assert_eq!(trace.cycles, 4);
+        assert_eq!(cpu.state().a, 0xa5);
+    }
+
+    #[test]
+    fn boundary_only_operations_reject_an_active_instruction_without_bus_access() {
+        let mut ram = RecordingRam {
+            data: vec![0; 65_536],
+            trace: Vec::new(),
+        };
+        ram.data[0x8000] = 0xea;
+        let mut cpu = Cpu::new(CpuState::at(0x8000));
+        assert_eq!(cpu.clock(&mut ram), Ok(ClockOutcome::InProgress));
+        let after_fetch = cpu.clone();
+        let accesses = ram.trace.len();
+
+        assert_eq!(
+            cpu.service_interrupt(&mut ram, Interrupt::Irq),
+            Err(CpuError::OperationInProgress {
+                operation: "service an interrupt"
+            })
+        );
+        assert_eq!(
+            cpu.reset(&mut ram),
+            Err(CpuError::OperationInProgress { operation: "reset" })
+        );
+        assert_eq!(cpu, after_fetch);
+        assert_eq!(ram.trace.len(), accesses);
+
+        let trace = cpu.step(&mut ram).expect("step finishes active NOP");
+        assert_eq!(trace.before.pc, 0x8000);
+        assert_eq!(trace.cycles, 2);
+    }
+
+    #[test]
     fn pinned_mit_single_step_vectors_match_all_documented_encodings() {
         assert_eq!(UPSTREAM_COMMIT, "2f6980a2d95757486c7bee24355c360e40e2a224");
         assert_eq!(VECTORS.len(), 190);
@@ -1520,7 +2554,24 @@ mod tests {
             let initial = state_from_snapshot(vector.initial, 0);
             let mut cpu = Cpu::new(initial);
             let mut ram = RecordingRam::from_vector(vector);
-            let _ = cpu.step(&mut ram);
+            let mut calls = 0_u8;
+            loop {
+                let before_accesses = ram.trace.len();
+                let outcome = cpu
+                    .clock(&mut ram)
+                    .unwrap_or_else(|error| panic!("vector {} failed: {error}", vector.name));
+                calls += 1;
+                assert_eq!(
+                    ram.trace.len(),
+                    before_accesses + 1,
+                    "vector {} clock call {calls} did not perform one bus access",
+                    vector.name
+                );
+                if let ClockOutcome::InstructionComplete(trace) = outcome {
+                    assert_eq!(trace.cycles, calls, "vector {} clock calls", vector.name);
+                    break;
+                }
+            }
             if ram.trace.as_slice() != vector.bus_cycles {
                 diverging.insert(vector.opcode);
             }
@@ -1679,7 +2730,10 @@ mod tests {
 
     #[test]
     fn eight_cycle_instruction_requires_headroom_before_state_changes() {
-        let mut ram = Ram::new();
+        let mut ram = RecordingRam {
+            data: vec![0; 65_536],
+            trace: Vec::new(),
+        };
         ram.data[0x8000..0x8002].copy_from_slice(&[0x03, 0x40]);
         let before_ram = ram.data.clone();
         let mut state = CpuState::at(0x8000);
@@ -1692,6 +2746,7 @@ mod tests {
         );
         assert_eq!(cpu.state(), before);
         assert_eq!(ram.data, before_ram);
+        assert!(ram.trace.is_empty());
     }
 
     #[test]
@@ -1710,7 +2765,10 @@ mod tests {
 
     #[test]
     fn cycle_overflow_is_reported_before_cpu_or_bus_state_changes() {
-        let mut ram = Ram::new();
+        let mut ram = RecordingRam {
+            data: vec![0; 65_536],
+            trace: Vec::new(),
+        };
         ram.data[0x8000..0x8003].copy_from_slice(&[0x8d, 0x00, 0x20]);
         ram.data[0x2000] = 0xa5;
         let mut state = CpuState::at(0x8000);
@@ -1725,6 +2783,7 @@ mod tests {
         );
         assert_eq!(cpu.state(), before);
         assert_eq!(ram.data[0x2000], 0xa5);
+        assert!(ram.trace.is_empty());
     }
 
     #[test]

@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
+mod machine;
 mod nrom_bus;
 mod ppu_timing;
 
+pub use machine::{MachineCycle, MachineError, NesMachine};
 pub use nrom_bus::{CpuBusFault, NromCpuBus};
 pub use ppu_timing::{
     DOTS_PER_SCANLINE, MASTER_TICKS_PER_CPU_CYCLE, MASTER_TICKS_PER_PPU_DOT,
