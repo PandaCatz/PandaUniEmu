@@ -248,6 +248,14 @@ repository.
   required `netlist_6502.h` is CC BY-NC-SA 3.0 with its own attribution,
   noncommercial, and ShareAlike terms. The public repository contains only the
   project-owned harness/verifier, factual measurements, and provenance.
+- Fresh CPU, oracle/legal, and claims/publication reviews found and resolved
+  poll failure-atomicity, missing BRK oracle coverage, source/compiler staging,
+  reparse-boundary, artifact-ignore, late-branch-test, path-privacy, and stale
+  count issues. Final re-reviews found no remaining P0-P2 finding. A deletion-
+  safe 60-file preview passed and excluded all upstream oracle files/binaries
+  plus every local ROM/log. Published the live interrupt/reset checkpoint as
+  `0121c134533f2f0d9c84ba3be97984555ac1f6f5` to
+  `PandaCatz/PandaUniEmu@main`.
 - Fresh technical and claims reviews found three bounded issues: missing
   `FrameOverflow` atomicity coverage, wording that accidentally extended the
   190 documented-vector bus oracle to undocumented opcodes, and publication of

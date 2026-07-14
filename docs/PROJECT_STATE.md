@@ -32,7 +32,8 @@ frontend, or playable emulation.
 
 ## Implemented this session
 
-Live interrupt/reset oracle checkpoint (2026-07-14, publication pending):
+Live interrupt/reset oracle checkpoint (2026-07-14, published in
+`0121c134533f2f0d9c84ba3be97984555ac1f6f5`):
 
 - Replaced whole-operation-only hardware entry with typed live interrupt and
   reset microstates. Each `clock` call performs exactly one of the two current-PC
@@ -60,6 +61,16 @@ Live interrupt/reset oracle checkpoint (2026-07-14, publication pending):
 - Corrected the initial MIT-only intake: the simulator C is MIT, while required
   `netlist_6502.h` carries a file-specific CC BY-NC-SA 3.0 notice. No upstream
   source, netlist, or generated binary is published under the project GPL.
+- Three fresh adversarial reviews found and resolved four bounded issues: both
+  accepted and empty poll decisions now survive cycle-headroom failure; BRK
+  early/late hijacking is measured separately from IRQ; the compiler consumes
+  the exact hashed source through a fully qualified x64 tool path; and external
+  cache/build paths reject repository descendants and reparse ancestors. Final
+  CPU, oracle/legal, and claims/publication reviews found no remaining P0-P2
+  issue. The deletion-safe 60-file preview found no missing managed files and
+  excluded every upstream file, binary, ROM, and log.
+- Published the verified allowlisted snapshot to `PandaCatz/PandaUniEmu@main`
+  as commit `0121c134533f2f0d9c84ba3be97984555ac1f6f5`.
 
 Live CPU-cycle and machine-clock checkpoint (2026-07-14, published in
 `2637b71c7501f0108e1dc1e25a95aadf4fe26eef`):
