@@ -89,15 +89,20 @@ timing checkpoint built after this intake is deliberately smaller than a PPU:
 - the one-dot odd-frame shortening only while rendering is enabled; and
 - checked, failure-atomic timing counters.
 
-The later machine checkpoint now makes the CPU yield at every live bus cycle and
-adds a deterministic PPU register/address-space shell: mirrored CPU ports,
-shared scroll/address state, buffered data access, NROM CHR, nametable/palette
-mirroring, basic OAM ports, and logical VBlank-driven NMI. It still does not
-implement rendering fetches/pixels, exact PPUSTATUS/VBlank race windows, DMA,
-APU, or a complete machine. The local notes remain a checklist, not an oracle.
+The later machine checkpoints now make the CPU yield at every live bus cycle and
+add a deterministic PPU register/address/background-fetch shell: mirrored CPU
+ports, shared scroll/address state, buffered blanking-time data access, NROM CHR,
+nametable/palette mirroring, basic OAM ports, logical VBlank-driven NMI, two-dot
+background fetch phases, shifter reloads, and scroll transfers. The numeric
+fetch/scroll cases were independently derived from the NESdev references below,
+not from the local notes. Pixels, sprites, exact PPUMASK propagation,
+PPUSTATUS/VBlank races, contended `$2007` data behavior/collisions, DMA, APU, and
+a complete machine still do not exist. The local notes remain a checklist, not
+an oracle.
 
 ## Timing references
 
 - <https://www.nesdev.org/wiki/Clock_rate>
 - <https://www.nesdev.org/wiki/PPU_rendering>
+- <https://www.nesdev.org/wiki/PPU_scrolling>
 - <https://www.nesdev.org/wiki/PPU_registers>

@@ -18,10 +18,11 @@ compatible `step` wrapper completes an instruction. A machine-owned boundary
 composes that interface with mapper 0 and advances the exact NTSC scheduler by
 12 master ticks / 3 PPU dots per CPU cycle. A deterministic PPU shell now routes
 mirrored `$2000-$3FFF` CPU ports, NROM CHR ROM/RAM, horizontal/vertical/four-
-screen nametables, palette aliases, basic OAM ports, buffered PPUDATA access,
-and logical VBlank-driven NMI. Interrupt and scheduled warm-reset entry use that
-same live machine boundary. Rendering fetches, pixels, sprites, DMA/APU, and
-dot-exact status races do not exist.
+screen nametables, palette aliases, basic OAM ports, buffered blanking-time
+PPUDATA access, logical VBlank-driven NMI, and a bounded dot-timed background
+fetch/scroll pipeline. Interrupt and scheduled warm-reset entry use that same
+live machine boundary. Pixels, sprites, DMA/APU, exact PPUMASK propagation,
+contended `$2007` data/collisions, and dot-exact status races do not exist.
 Seven functional workspace crates exist. The
 reviewed QMT `nestest` pair passes 8,991 rows / 8,990
 transitions through the mapper-0 CPU bus, including the exact 76 stable
@@ -34,6 +35,46 @@ PPU renderer, APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
+
+Background fetch/scroll checkpoint (2026-07-14, pending publication):
+
+- Moved CHR RAM and all nametable storage from a copied PPU snapshot to the live
+  mapper-0 bus. Automatic reads now expose separate address and data phases for
+  nametable, attribute, low/high pattern, prefetch, and dummy fetches; machine
+  cycles report the three background accesses that precede their CPU access.
+  Sprite/garbage activity at dots 257-320 remains intentionally absent.
+- Added background latches and pattern/attribute shifters, reload timing, every
+  coarse-X increment, dot-256 vertical increment, dot-257 horizontal transfer,
+  repeated pre-render 280-304 vertical transfers, and rendering-time `$2007`
+  coarse-X-plus-Y increment. The latter models no contended data transfer:
+  read value/buffering, unpredictable write destination, and collisions with a
+  scheduled scroll increment remain unclaimed.
+- Project-owned numeric cases derived from NESdev's rendering/scrolling
+  descriptions cover address formulas, all four attribute quadrants, both
+  pattern tables/extreme tile rows, every X/Y wrap branch, continuous dots
+  249-257, prefetch/dummy dots 321-340, odd-frame 339-to-0 completion, both
+  PPUMASK enable bits, blanking/sprite windows, reset, and machine ordering.
+  They are specification-derived self-tests, not an independent hardware or
+  test-ROM rendering oracle.
+- Replaced the public unchecked CPU follow-up call with an exclusive prepared
+  cycle. CPU headroom and all scheduler overflow paths are resolved before the
+  first live mapper observation; only NMI/IRQ line updates remain possible
+  before the prepared infallible CPU access.
+- PPUMASK changes currently affect the fetch schedule immediately. Hardware's
+  roughly 3-4-dot propagation, hybrid address effects, sprite evaluation/fetch,
+  pixels, PPUSTATUS races, and mapper IRQ/A12 equivalence remain later work.
+- Focused `cpu-6502` and `core-nes` suites pass (46 and 49 tests), as does
+  warnings-denied focused Clippy. Three fresh reviews found and resolved unsafe
+  public preflight use, render-time `$2007` ordinary-transfer behavior,
+  discontinuous dot-256 coverage, and missing nonzero attribute checks. Fix-only
+  reviews found no remaining P0-P1; the deferred PPUMASK/`$2007` collision claim
+  boundaries above are the remaining P2 limitations.
+- Full format, warnings-denied Clippy, debug/release all-target builds, 143-test
+  debug/release suites, and debug/release doc tests passed. The strict operator
+  `nestest` remains at 8,991 rows / 8,990 transitions; three clean-room cases
+  and six Python checks passed; the pinned transistor oracle passed; both parser
+  fuzz targets completed 10,000 Windows ASan runs; and the synthetic release
+  CLI hashes remain unchanged.
 
 PPU register/address-space shell checkpoint (2026-07-14, published in
 `86f0b4a0d12d2223cfd25bb64066ceb443dde06b`):
@@ -519,11 +560,11 @@ Ubuntu 24.04.
 
 ## Next action
 
-Continue the PPU from the verified register/address shell into rendering-time
-fetches and scroll transfers, then sprite evaluation and deterministic pixels.
-Pin numeric/dot-level oracles before claiming equivalence, including the
-PPUSTATUS/VBlank suppression window and rendering-time register behavior. DMA,
-APU, and the headless video/audio gate follow. Only after that mapper-0
+Continue the verified background-fetch/scroll shell into sprite evaluation and
+fetches, deterministic pixels, PPUMASK propagation, contended `$2007` collision
+behavior, and the PPUSTATUS/VBlank suppression window. Pin numeric/dot-level or
+independent oracles before claiming equivalence. DMA, APU, and the headless
+video/audio gate follow. Only after that mapper-0
 whole-machine gate should MMC1 be implemented for the supplied target.
 
 ## Open decisions

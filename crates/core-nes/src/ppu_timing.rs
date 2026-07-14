@@ -40,6 +40,13 @@ pub struct TimedPpuEvent {
     pub event: PpuEvent,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TimedPpuDot {
+    pub master_tick: u64,
+    pub position: PpuPosition,
+    pub event: Option<PpuEvent>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PpuTiming {
     position: PpuPosition,
@@ -173,28 +180,42 @@ impl NtscScheduler {
         Ok(events)
     }
 
-    fn clock_cpu_cycle(&mut self) -> Result<Option<TimedPpuEvent>, TimingError> {
-        let end = self
-            .master_ticks
-            .checked_add(MASTER_TICKS_PER_CPU_CYCLE)
-            .ok_or(TimingError::MasterTickOverflow)?;
+    pub(crate) fn plan_cpu_cycle(&self) -> Result<(Self, [TimedPpuDot; 3]), TimingError> {
+        let mut next = self.clone();
+        let first = next.clock_ppu_dot()?;
+        let second = next.clock_ppu_dot()?;
+        let third = next.clock_ppu_dot()?;
+        Ok((next, [first, second, third]))
+    }
 
-        let mut next_ppu = self.ppu;
+    fn clock_cpu_cycle(&mut self) -> Result<Option<TimedPpuEvent>, TimingError> {
         let mut event = None;
-        for dot in 0..(MASTER_TICKS_PER_CPU_CYCLE / MASTER_TICKS_PER_PPU_DOT) {
-            let master_tick = self.master_ticks + dot * MASTER_TICKS_PER_PPU_DOT;
-            if let Some(kind) = next_ppu.clock_dot()? {
+        let (next, dots) = self.plan_cpu_cycle()?;
+        for dot in dots {
+            if let Some(kind) = dot.event {
                 debug_assert!(event.is_none());
                 event = Some(TimedPpuEvent {
-                    master_tick,
+                    master_tick: dot.master_tick,
                     event: kind,
                 });
             }
         }
-
-        self.ppu = next_ppu;
-        self.master_ticks = end;
+        *self = next;
         Ok(event)
+    }
+
+    fn clock_ppu_dot(&mut self) -> Result<TimedPpuDot, TimingError> {
+        let end = self
+            .master_ticks
+            .checked_add(MASTER_TICKS_PER_PPU_DOT)
+            .ok_or(TimingError::MasterTickOverflow)?;
+        let dot = TimedPpuDot {
+            master_tick: self.master_ticks,
+            position: self.ppu.position(),
+            event: self.ppu.clock_dot()?,
+        };
+        self.master_ticks = end;
+        Ok(dot)
     }
 }
 

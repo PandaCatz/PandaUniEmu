@@ -15,7 +15,7 @@ have passed unless the evidence column says so.
 | Unofficial opcodes | Explicit supported-encoding table and independent suite | The exact 76 stable encodings exercised by the identity-checked `nestest` trace pass; jam and hardware-sensitive unstable encodings remain unsupported |
 | Mapper 0 execution | Parsed NROM-128/NROM-256 images map PRG/CHR correctly and run CPU traces without inline re-parsing | CPU RAM/PRG mapping, trainer preload, ROM write behavior, reset vector storage, hostile memory-layout rejection, independent clean-room CPU traces, and NROM CHR-ROM/CHR-RAM PPU routing pass |
 | PPU register/address shell | Focused register, address-map, mirroring, buffering, OAM-port, timing, and NMI tests | Deterministic shell passes generated tests for mirrored `$2000-$3FFF` ports, shared scroll/address state, PPUDATA buffering, horizontal/vertical/four-screen nametables, palette aliases, and logical VBlank NMI |
-| PPU rendering | Fetch/scroll/sprite/pixel oracles plus dot-exact VBlank/status race suites | Not started; no rendering or cycle-accurate PPU claim |
+| PPU rendering | Fetch/scroll/sprite/pixel oracles plus dot-exact VBlank/status race suites | Bounded background-only checkpoint: project-owned NESdev-derived numeric cases cover two-dot fetch phases, scroll transfers/wraps, prefetch/dummy reads, and shifter reloads; sprites, pixels, PPUMASK propagation, status races, and a complete or cycle-accurate rendering claim remain open |
 | APU/DMA/input/gameplay | Headless timing/oracle suites and operator-owned compatibility matrix | Not started |
 
 ## CPU milestone boundary

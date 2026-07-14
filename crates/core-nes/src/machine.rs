@@ -1,5 +1,6 @@
 use crate::{
-    CpuBusFault, NesCartridge, NromCpuBus, NtscScheduler, Ppu, TimedPpuEvent, TimingError,
+    CpuBusFault, NesCartridge, NromCpuBus, NtscScheduler, Ppu, PpuBusAccess, TimedPpuEvent,
+    TimingError,
 };
 use cpu_6502::{Bus, ClockOutcome, Cpu, CpuError, CpuState};
 use std::error::Error;
@@ -9,6 +10,9 @@ use std::fmt::{Display, Formatter};
 pub struct MachineCycle {
     pub cpu: ClockOutcome,
     pub ppu_event: Option<TimedPpuEvent>,
+    /// Background-fetch activity for the three elapsed dots. Sprite/garbage
+    /// fetches at dots 257-320 are intentionally absent at this checkpoint.
+    pub ppu_accesses: [Option<PpuBusAccess>; 3],
     pub bus_fault: Option<CpuBusFault>,
 }
 
@@ -26,7 +30,7 @@ pub struct NesMachine {
 impl NesMachine {
     #[must_use]
     pub fn new(cartridge: NesCartridge, cpu_state: CpuState) -> Self {
-        let ppu = Ppu::new(&cartridge);
+        let ppu = Ppu::new();
         Self {
             cpu: Cpu::new(cpu_state),
             bus: NromCpuBus::new(cartridge),
@@ -54,6 +58,16 @@ impl NesMachine {
     #[must_use]
     pub const fn scheduler(&self) -> &NtscScheduler {
         &self.scheduler
+    }
+
+    #[must_use]
+    pub fn peek_ppu_memory(&self, address: u16) -> u8 {
+        let address = address & 0x3fff;
+        if address >= 0x3f00 {
+            self.ppu.peek_palette(address)
+        } else {
+            self.bus.peek_ppu(address)
+        }
     }
 
     pub fn set_nmi_line(&mut self, asserted: bool) {
@@ -88,25 +102,37 @@ impl NesMachine {
     /// applies their logical event, and then performs the CPU access. CPU, PPU,
     /// and timing are committed together only after that access succeeds.
     pub fn clock(&mut self) -> Result<MachineCycle, MachineError> {
-        let mut next_scheduler = self.scheduler.clone();
-        next_scheduler
+        let mut next_cpu = self.cpu.clone();
+        let mut prepared_cpu = next_cpu.prepare_clock()?;
+
+        let mut scheduler_with_rendering = self.scheduler.clone();
+        scheduler_with_rendering
             .ppu_mut()
             .set_rendering_enabled(self.ppu.rendering_enabled());
-        let ppu_event = next_scheduler.advance_cpu_cycle()?;
+        let (mut next_scheduler, dots) = scheduler_with_rendering.plan_cpu_cycle()?;
 
         let mut next_ppu = self.ppu.clone();
-        if let Some(event) = ppu_event {
-            next_ppu.apply_event(event.event);
+        let mut ppu_event = None;
+        let mut ppu_accesses = [None; 3];
+        for (index, dot) in dots.into_iter().enumerate() {
+            ppu_accesses[index] = next_ppu.clock_dot(&mut self.bus, dot.position);
+            if let Some(event) = dot.event {
+                next_ppu.apply_event(event);
+                ppu_event = Some(TimedPpuEvent {
+                    master_tick: dot.master_tick,
+                    event,
+                });
+            }
         }
+        next_ppu.sync_cpu_position(next_scheduler.ppu().position());
 
-        let mut next_cpu = self.cpu.clone();
-        next_cpu.set_nmi_line(self.external_nmi_line || next_ppu.nmi_output());
+        prepared_cpu.set_nmi_line(self.external_nmi_line || next_ppu.nmi_output());
         let cpu = {
             let mut bus = MachineCpuBus {
                 nrom: &mut self.bus,
                 ppu: &mut next_ppu,
             };
-            next_cpu.clock(&mut bus)?
+            prepared_cpu.clock(&mut bus)
         };
         next_cpu.set_nmi_line(self.external_nmi_line || next_ppu.nmi_output());
         next_scheduler
@@ -119,6 +145,7 @@ impl NesMachine {
         Ok(MachineCycle {
             cpu,
             ppu_event,
+            ppu_accesses,
             bus_fault: self.bus.take_fault(),
         })
     }
@@ -132,7 +159,9 @@ struct MachineCpuBus<'a> {
 impl Bus for MachineCpuBus<'_> {
     fn read(&mut self, address: u16) -> u8 {
         if matches!(address, 0x2000..=0x3fff) {
-            let value = self.ppu.cpu_read_register((address & 0x0007) as u8);
+            let value = self
+                .ppu
+                .cpu_read_register(self.nrom, (address & 0x0007) as u8);
             self.nrom.observe_open_bus(value);
             value
         } else {
@@ -143,7 +172,8 @@ impl Bus for MachineCpuBus<'_> {
     fn write(&mut self, address: u16, value: u8) {
         if matches!(address, 0x2000..=0x3fff) {
             self.nrom.observe_open_bus(value);
-            self.ppu.cpu_write_register((address & 0x0007) as u8, value);
+            self.ppu
+                .cpu_write_register(self.nrom, (address & 0x0007) as u8, value);
         } else {
             self.nrom.write(address, value);
         }
@@ -204,6 +234,12 @@ mod tests {
         bytes[16 + 0x3ffe..16 + 0x4000].copy_from_slice(&0x9000_u16.to_le_bytes());
         let parsed = format_ines::parse(&bytes).expect("generated NROM image parses");
         NesCartridge::from_parsed(parsed).expect("generated NROM cartridge is supported")
+    }
+
+    fn write_ppu_register(machine: &mut NesMachine, register: u8, value: u8) {
+        machine
+            .ppu
+            .cpu_write_register(&mut machine.bus, register, value);
     }
 
     #[test]
@@ -268,13 +304,39 @@ mod tests {
     }
 
     #[test]
+    fn current_immediate_ppumask_model_only_enables_later_ppu_dots() {
+        let program = [0xa9, 0x08, 0x8d, 0x01, 0x20, 0xea];
+        let mut machine = NesMachine::new(cartridge_with_program(&program), CpuState::at(0x8000));
+        for _ in 0..5 {
+            let cycle = machine.clock().expect("setup cycle clocks");
+            assert_eq!(cycle.ppu_accesses, [None; 3]);
+        }
+        let write_cycle = machine.clock().expect("PPUMASK write cycle clocks");
+        assert_eq!(write_cycle.ppu_accesses, [None; 3]);
+        assert!(machine.ppu.rendering_enabled());
+
+        let following = machine
+            .clock()
+            .expect("following cycle clocks rendered dots");
+        assert_eq!(following.ppu_accesses[0], None);
+        let address = following.ppu_accesses[1].expect("dot 19 drives the attribute address");
+        assert_eq!(address.position.dot, 19);
+        assert_eq!(address.kind, crate::PpuFetchKind::Attribute);
+        assert_eq!(address.phase, crate::PpuBusPhase::Address);
+        let read = following.ppu_accesses[2].expect("dot 20 reads the attribute byte");
+        assert_eq!(read.position.dot, 20);
+        assert_eq!(read.kind, crate::PpuFetchKind::Attribute);
+        assert_eq!(read.phase, crate::PpuBusPhase::Read);
+    }
+
+    #[test]
     fn every_ppu_register_decodes_identically_at_the_top_mirror() {
         for register in 0_u16..8 {
             let cartridge = cartridge_with_program(&[]);
             let mut expected_bus = NromCpuBus::new(cartridge.clone());
-            let mut expected_ppu = Ppu::new(&cartridge);
+            let mut expected_ppu = Ppu::new();
             let mut mirrored_bus = NromCpuBus::new(cartridge.clone());
-            let mut mirrored_ppu = Ppu::new(&cartridge);
+            let mut mirrored_ppu = Ppu::new();
             let value = 0x40 | register as u8;
 
             MachineCpuBus {
@@ -288,11 +350,12 @@ mod tests {
             }
             .write(0x3ff8 + register, value);
             assert_eq!(mirrored_ppu, expected_ppu, "register {register}");
+            assert_eq!(mirrored_bus, expected_bus, "register {register} bus state");
         }
 
         let cartridge = cartridge_with_program(&[]);
         let mut nrom = NromCpuBus::new(cartridge.clone());
-        let mut ppu = Ppu::new(&cartridge);
+        let mut ppu = Ppu::new();
         MachineCpuBus {
             nrom: &mut nrom,
             ppu: &mut ppu,
@@ -330,6 +393,31 @@ mod tests {
     }
 
     #[test]
+    fn machine_exposes_ppu_address_then_read_before_the_cpu_bus_cycle() {
+        let mut machine = NesMachine::new(cartridge_with_program(&[0xea]), CpuState::at(0x8000));
+        write_ppu_register(&mut machine, 1, 0x08);
+
+        let cycle = machine
+            .clock()
+            .expect("first rendered machine cycle clocks");
+        assert_eq!(cycle.ppu_accesses[0], None);
+        let address = cycle.ppu_accesses[1].expect("dot 1 drives the nametable address");
+        assert_eq!(address.position.dot, 1);
+        assert_eq!(address.kind, crate::PpuFetchKind::Nametable);
+        assert_eq!(address.phase, crate::PpuBusPhase::Address);
+        assert_eq!(address.address, 0x2000);
+        assert_eq!(address.value, None);
+        let read = cycle.ppu_accesses[2].expect("dot 2 reads that nametable byte");
+        assert_eq!(read.position.dot, 2);
+        assert_eq!(read.kind, crate::PpuFetchKind::Nametable);
+        assert_eq!(read.phase, crate::PpuBusPhase::Read);
+        assert_eq!(read.address, 0x2000);
+        assert_eq!(read.value, Some(0));
+        assert_eq!(machine.scheduler().ppu().position().dot, 3);
+        assert_eq!(machine.cpu().state().total_cycles, 1);
+    }
+
+    #[test]
     fn warm_reset_clocks_seven_machine_cycles_in_lockstep() {
         let mut state = CpuState::at(0x8005);
         state.status &= !FLAG_INTERRUPT_DISABLE;
@@ -364,9 +452,9 @@ mod tests {
     #[test]
     fn front_loader_reset_resets_ppu_registers_and_timing_but_not_master_time() {
         let mut machine = NesMachine::new(cartridge_with_program(&[]), CpuState::at(0x8000));
-        machine.ppu.cpu_write_register(0, 0x80);
-        machine.ppu.cpu_write_register(1, 0x18);
-        machine.ppu.cpu_write_register(5, 0xff);
+        write_ppu_register(&mut machine, 0, 0x80);
+        write_ppu_register(&mut machine, 1, 0x18);
+        write_ppu_register(&mut machine, 5, 0xff);
         machine
             .scheduler
             .advance_cpu_cycles(3)
@@ -391,13 +479,20 @@ mod tests {
     #[test]
     fn cpu_only_reset_preserves_famicom_ppu_state() {
         let mut machine = NesMachine::new(cartridge_with_program(&[]), CpuState::at(0x8000));
-        machine.ppu.cpu_write_register(0, 0x80);
-        machine.ppu.cpu_write_register(1, 0x18);
+        write_ppu_register(&mut machine, 0, 0x80);
+        write_ppu_register(&mut machine, 1, 0x18);
+        for _ in 0..2 {
+            machine
+                .clock()
+                .expect("rendering pipeline and one NOP instruction clock");
+        }
+        let before_ppu = machine.ppu.clone();
+        let before_bus = machine.bus.clone();
 
         machine.begin_cpu_reset().expect("CPU-only reset starts");
 
-        assert_eq!(machine.ppu.control(), 0x80);
-        assert_eq!(machine.ppu.mask(), 0x18);
+        assert_eq!(machine.ppu, before_ppu);
+        assert_eq!(machine.bus, before_bus);
     }
 
     #[test]
@@ -458,9 +553,7 @@ mod tests {
             Err(MachineError::Timing(TimingError::MasterTickOverflow))
         );
         assert_eq!(machine.cpu, before_cpu);
-        assert_eq!(machine.bus.cpu_ram(), before_bus.cpu_ram());
-        assert_eq!(machine.bus.prg_ram(), before_bus.prg_ram());
-        assert_eq!(machine.bus.take_fault(), before_bus.clone().take_fault());
+        assert_eq!(machine.bus, before_bus);
         assert_eq!(machine.ppu, before_ppu);
         assert_eq!(machine.scheduler, before_scheduler);
     }

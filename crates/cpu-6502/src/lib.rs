@@ -703,6 +703,27 @@ pub struct Cpu {
     poll_valid: bool,
 }
 
+/// A counter-headroom-checked CPU cycle that permits only interrupt-line
+/// updates before its single bus access is consumed.
+pub struct PreparedClock<'a> {
+    cpu: &'a mut Cpu,
+}
+
+impl PreparedClock<'_> {
+    pub fn set_nmi_line(&mut self, asserted: bool) {
+        self.cpu.set_nmi_line(asserted);
+    }
+
+    pub fn set_irq_line(&mut self, asserted: bool) {
+        self.cpu.set_irq_line(asserted);
+    }
+
+    /// Consumes the reservation and performs exactly one live bus cycle.
+    pub fn clock(self, bus: &mut impl Bus) -> ClockOutcome {
+        self.cpu.clock_prechecked(bus)
+    }
+}
+
 // Eight is the largest cycle total among the documented instructions and the
 // stable undocumented encodings exercised by the accepted nestest trace.
 pub const MAX_INSTRUCTION_CYCLES: u8 = 8;
@@ -802,6 +823,11 @@ impl Cpu {
             });
         }
         self.require_operation_headroom(INTERRUPT_CYCLES)?;
+        self.install_interrupt(kind);
+        Ok(())
+    }
+
+    fn install_interrupt(&mut self, kind: Interrupt) {
         self.polled_interrupt = None;
         self.poll_valid = false;
         self.active = Some(ActiveOperation::Interrupt(ActiveInterrupt {
@@ -810,7 +836,6 @@ impl Cpu {
             cycles: 0,
             stage: InterruptStage::FirstPcRead,
         }));
-        Ok(())
     }
 
     /// Compatibility wrapper that drains a live interrupt entry. Machine-level
@@ -892,37 +917,50 @@ impl Cpu {
         self.state.pc = read_u16(bus, vector);
     }
 
+    /// Verifies that the next live bus cycle has enough counter headroom.
+    pub fn check_clock(&self) -> Result<(), CpuError> {
+        if self.active.is_some() {
+            return Ok(());
+        }
+        if self.poll_valid && self.polled_interrupt.is_some() {
+            return self.require_operation_headroom(INTERRUPT_CYCLES);
+        }
+        self.require_operation_headroom(u64::from(MAX_INSTRUCTION_CYCLES))
+    }
+
+    /// Reserves enough counter headroom for one bus cycle. The returned value
+    /// exclusively borrows the CPU, so callers cannot invalidate the preflight;
+    /// physical interrupt lines may still be updated before the access.
+    pub fn prepare_clock(&mut self) -> Result<PreparedClock<'_>, CpuError> {
+        self.check_clock()?;
+        Ok(PreparedClock { cpu: self })
+    }
+
     /// Performs one live instruction bus cycle. Each successful call makes
     /// exactly one bus read or write and increments `total_cycles` by one.
     /// The caller may advance devices and drive interrupt lines between calls.
     pub fn clock(&mut self, bus: &mut impl Bus) -> Result<ClockOutcome, CpuError> {
+        Ok(self.prepare_clock()?.clock(bus))
+    }
+
+    fn clock_prechecked(&mut self, bus: &mut impl Bus) -> ClockOutcome {
+        debug_assert!(self.check_clock().is_ok());
         if self.active.is_none()
             && self.poll_valid
             && let Some(kind) = self.polled_interrupt
         {
-            self.begin_interrupt(kind)?;
+            self.install_interrupt(kind);
         }
 
         if let Some(active) = self.active.take() {
-            return Ok(match active {
+            return match active {
                 ActiveOperation::Instruction(instruction) => self.clock_active(bus, instruction),
                 ActiveOperation::Interrupt(interrupt) => self.clock_interrupt(bus, interrupt),
                 ActiveOperation::Reset(reset) => self.clock_reset(bus, reset),
-            });
+            };
         }
 
         {
-            if self
-                .state
-                .total_cycles
-                .checked_add(u64::from(MAX_INSTRUCTION_CYCLES))
-                .is_none()
-            {
-                return Err(CpuError::CycleCounterHeadroomExhausted {
-                    remaining: (u64::MAX - self.state.total_cycles) as u8,
-                });
-            }
-
             self.poll_valid = false;
             self.polled_interrupt = None;
             let before = self.state;
@@ -930,10 +968,10 @@ impl Cpu {
             self.state.pc = self.state.pc.wrapping_add(1);
             self.state.total_cycles += 1;
             let Some(instruction) = decode(opcode) else {
-                return Ok(ClockOutcome::UnsupportedOpcode {
+                return ClockOutcome::UnsupportedOpcode {
                     pc: before.pc,
                     opcode,
-                });
+                };
             };
             let sequence = Self::sequence_for(instruction);
             if self.sequence_completes_next_cycle(instruction, sequence) {
@@ -946,7 +984,7 @@ impl Cpu {
                 cycles: 1,
                 sequence,
             }));
-            Ok(ClockOutcome::InProgress)
+            ClockOutcome::InProgress
         }
     }
 

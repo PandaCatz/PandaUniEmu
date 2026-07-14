@@ -1,5 +1,6 @@
 use crate::NesCartridge;
 use cpu_6502::Bus;
+use format_ines::Mirroring;
 use std::fmt::{Display, Formatter};
 
 const CPU_RAM_SIZE: usize = 2 * 1024;
@@ -7,6 +8,8 @@ const PRG_RAM_START: u16 = 0x6000;
 const PRG_RAM_SIZE: usize = 8 * 1024;
 const PRG_ROM_START: u16 = 0x8000;
 const TRAINER_START_IN_PRG_RAM: usize = 0x1000;
+const CHR_RAM_SIZE: usize = 8 * 1024;
+const NAMETABLE_SIZE: usize = 4 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CpuBusFault {
@@ -30,11 +33,14 @@ impl Display for CpuBusFault {
 
 impl std::error::Error for CpuBusFault {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NromCpuBus {
     cartridge: NesCartridge,
     cpu_ram: [u8; CPU_RAM_SIZE],
     prg_ram: Vec<u8>,
+    chr_ram: Vec<u8>,
+    nametables: [u8; NAMETABLE_SIZE],
+    ppu_address_bus: u16,
     open_bus: u8,
     fault: Option<CpuBusFault>,
 }
@@ -46,6 +52,11 @@ impl NromCpuBus {
         let prg_memory = ram_sizes.prg_ram + ram_sizes.prg_nvram;
         debug_assert!(matches!(prg_memory, 0 | PRG_RAM_SIZE));
         let mut prg_ram = vec![0; prg_memory];
+        let chr_ram = if cartridge.chr_rom().is_empty() {
+            vec![0; CHR_RAM_SIZE]
+        } else {
+            Vec::new()
+        };
         if let Some(trainer) = cartridge.trainer() {
             debug_assert_eq!(trainer.len(), 512);
             prg_ram[TRAINER_START_IN_PRG_RAM..TRAINER_START_IN_PRG_RAM + trainer.len()]
@@ -55,6 +66,9 @@ impl NromCpuBus {
             cartridge,
             cpu_ram: [0; CPU_RAM_SIZE],
             prg_ram,
+            chr_ram,
+            nametables: [0; NAMETABLE_SIZE],
+            ppu_address_bus: 0,
             open_bus: 0,
             fault: None,
         }
@@ -83,6 +97,34 @@ impl NromCpuBus {
         self.open_bus = value;
     }
 
+    pub(crate) fn peek_ppu(&self, address: u16) -> u8 {
+        let address = address & 0x3fff;
+        match address {
+            0x0000..=0x1fff if self.chr_ram.is_empty() => {
+                self.cartridge.chr_rom()[usize::from(address)]
+            }
+            0x0000..=0x1fff => self.chr_ram[usize::from(address)],
+            0x2000..=0x3eff => self.nametables[self.nametable_index(address)],
+            _ => unreachable!("palette RAM is internal to the PPU"),
+        }
+    }
+
+    fn nametable_index(&self, address: u16) -> usize {
+        let mirrored = if address >= 0x3000 {
+            address - 0x1000
+        } else {
+            address
+        };
+        let offset = usize::from(mirrored - 0x2000);
+        let logical_table = offset / 0x400;
+        let physical_table = match self.cartridge.mirroring() {
+            Mirroring::Horizontal => logical_table >> 1,
+            Mirroring::Vertical => logical_table & 1,
+            Mirroring::FourScreen => logical_table,
+        };
+        physical_table * 0x400 + (offset & 0x3ff)
+    }
+
     pub fn peek(&self, address: u16) -> Result<u8, CpuBusFault> {
         match address {
             0x0000..=0x1fff => Ok(self.cpu_ram[usize::from(address) & (CPU_RAM_SIZE - 1)]),
@@ -105,6 +147,35 @@ impl NromCpuBus {
     fn record_fault(&mut self, fault: CpuBusFault) {
         if self.fault.is_none() {
             self.fault = Some(fault);
+        }
+    }
+}
+
+impl crate::ppu::PpuBus for NromCpuBus {
+    fn observe_address(&mut self, address: u16) {
+        self.ppu_address_bus = address & 0x3fff;
+    }
+
+    fn peek(&self, address: u16) -> u8 {
+        self.peek_ppu(address)
+    }
+
+    fn read(&mut self, address: u16) -> u8 {
+        self.peek_ppu(address)
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        let address = address & 0x3fff;
+        match address {
+            0x0000..=0x1fff if !self.chr_ram.is_empty() => {
+                self.chr_ram[usize::from(address)] = value;
+            }
+            0x0000..=0x1fff => {}
+            0x2000..=0x3eff => {
+                let index = self.nametable_index(address);
+                self.nametables[index] = value;
+            }
+            _ => unreachable!("palette RAM is internal to the PPU"),
         }
     }
 }

@@ -45,8 +45,8 @@ The workspace contains seven functional crates:
 - `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, a
   CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults, the exact
   NTSC master-clock/PPU-dot timing layer, a deterministic PPU register/address
-  shell, and a machine-owned one-CPU-cycle boundary that composes the live CPU
-  bus, PPU ports, logical VBlank NMI, and scheduler.
+  and background-fetch/scroll shell, and a machine-owned one-CPU-cycle boundary
+  that composes the live CPU bus, PPU ports, logical VBlank NMI, and scheduler.
 - `retro-testkit`: deterministic synthetic core, capture hashes, generated
   mapper-0 trace comparison, the `nestest` CPU-only I/O policy selected by the
   strict CLI after fixture identity verification, and pinned clean-room
@@ -67,12 +67,13 @@ The fuzz project calls both format parsers with arbitrary bytes. The checked-in
 launcher generates redistribution-safe seeds and handles the Windows
 AddressSanitizer runtime path.
 
-Not implemented: `retro-frontend`, a complete NES machine, PPU rendering
-fetches/pixels/sprites and exact status races, APU, asynchronous mid-instruction
+Not implemented: `retro-frontend`, a complete NES machine, PPU sprites/pixels,
+PPUMASK propagation and exact status races, APU, asynchronous mid-instruction
 reset takeover, DMA/RDY, input
 hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 The CPU and timing scheduler are connected at one live mapper-bus cycle per
-machine call. The PPU register/address shell exists, but there is no renderer.
+machine call. The PPU has bounded background fetch/scroll timing, but there is
+no pixel renderer.
 
 The operator's 31-file NES instruction folder is located at
 `%USERPROFILE%\Desktop\panda video\nes`. It was ingested into
@@ -265,6 +266,23 @@ repository.
   Timed VBlank now drives the existing edge-triggered CPU NMI path under the
   documented three-PPU-dots-then-one-CPU-access phase. These are generated
   self-tests, not independent proof of rendering or dot-exact status races.
+- Added the bounded dot-timed background fetch/scroll checkpoint: live
+  mapper-facing CHR/nametable ownership, separate address/read phases for
+  nametable/attribute/pattern fetches, shifter reloads, coarse-X/Y increments,
+  horizontal/vertical transfers, prefetch and dummy reads, and odd-frame
+  339-to-0 completion. Project-owned numeric cases derived from NESdev cover
+  the exact address formulas, all scroll wrap branches, attribute quadrants,
+  continuous dots 249-257, prefetch dots 321-340, and rendering gates. These
+  are specification-derived self-tests, not an independent hardware/test-ROM
+  rendering oracle.
+- Rendering-time `$2007` models only the coarse-X-plus-Y increment. Contended
+  reads return the existing I/O latch without refilling the buffer, writes do
+  not alter backing VRAM, and exact data corruption/destination plus collisions
+  with normal dot scroll increments remain deliberately unclaimed. PPUMASK is
+  also applied immediately; its hardware 3-4-dot propagation remains deferred.
+- Added an exclusive prepared CPU-cycle reservation so scheduler overflow and
+  CPU counter headroom are checked before live PPU mapper observations, while
+  NMI/IRQ lines may still be driven before the infallible CPU bus access.
 - Published the verified 61-file PPU register/address-space shell checkpoint as
   `86f0b4a0d12d2223cfd25bb64066ceb443dde06b` to
   `PandaCatz/PandaUniEmu@main`. The deletion-safe preview found no missing
@@ -317,12 +335,13 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 131 passed, 0 failed.
-- Release tests: 131 passed, 0 failed; debug/release doc tests passed.
+- Debug tests: 143 passed, 0 failed.
+- Release tests: 143 passed, 0 failed; debug/release doc tests passed.
 - `cpu-6502`: 46 tests passed, including live per-cycle access, mutation,
   227-encoding differential, boundary rejection, and the 190-vector oracle.
-- `core-nes`: 37 tests passed, including PPU register/address routing, NMI/reset
-  integration, scheduler, and machine-cycle tests.
+- `core-nes`: 49 tests passed, including PPU register/address routing,
+  background fetch/scroll numeric traces, NMI/reset integration, scheduler, and
+  machine-cycle tests.
 - All six new NTSC timing tests passed: exact 3:1 CPU/PPU progression, VBlank
   edges and master timestamp, 89,342/89,341-dot frame alternation, no shortened
   frame while rendering is disabled, and failure-atomic overflow.
@@ -434,9 +453,10 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 
 ## Next tasks, in order
 
-1. Continue the verified PPU shell with rendering-time fetch, scroll-transfer,
-   sprite-evaluation, pixel, and dot-race oracles. Do not claim cycle-accurate
-   rendering from the current register/address tests.
+1. Continue the verified background-fetch/scroll shell with sprite evaluation
+   and fetches, deterministic pixels, PPUMASK propagation, contended `$2007`
+   collision behavior, and dot-race oracles. Do not claim a complete or
+   cycle-accurate renderer from the current numeric self-tests.
 2. Add DMA/APU/input and reach a deterministic headless NROM video/audio
    checkpoint.
 3. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
@@ -475,6 +495,8 @@ separate transistor-level evidence. Undocumented-opcode bus order, asynchronous
 mid-instruction reset takeover, DMA/RDY, and exhaustive NMI edge cases remain
 unchecked. The machine boundary uses a fixed three-PPU-dots-then-one-CPU-access
 phase and connects timed VBlank to the PPU status/NMI shell. Exact same-dot
-status races, rendering fetches/pixels/sprites, DMA, APU, input, gameplay, and
-mapper 1 remain unimplemented. The strict CPU-trace CLI retains its separate
-reviewed I/O policy. This is not a playable NES emulator.
+status races, pixels/sprites, DMA, APU, input, gameplay, and mapper 1 remain
+unimplemented. Background fetches and scroll transfers now exist, but
+sprite-region bus activity, pixels, PPUMASK propagation, contended `$2007`
+data/collisions, and status races remain unverified. The strict CPU-trace CLI
+retains its separate reviewed I/O policy. This is not a playable NES emulator.
