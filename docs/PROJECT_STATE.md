@@ -69,7 +69,8 @@ PPU register/address-space shell checkpoint (2026-07-14, published in
   validated every allowlisted file through its in-root handle, and excluded all
   local ROMs/logs and external oracle material. The verified checkpoint was
   published to `PandaCatz/PandaUniEmu@main` as
-  `86f0b4a0d12d2223cfd25bb64066ceb443dde06b`.
+  `86f0b4a0d12d2223cfd25bb64066ceb443dde06b`; GitHub Actions run `29362611800`
+  passed all six Windows/Ubuntu test, fuzz, and clean-room evidence jobs.
 
 Live interrupt/reset oracle checkpoint (2026-07-14, published in
 `0121c134533f2f0d9c84ba3be97984555ac1f6f5`):

@@ -269,6 +269,8 @@ repository.
   `86f0b4a0d12d2223cfd25bb64066ceb443dde06b` to
   `PandaCatz/PandaUniEmu@main`. The deletion-safe preview found no missing
   managed files and excluded all local ROM/log and external-oracle material.
+  GitHub Actions run `29362611800` passed all six Windows/Ubuntu test, fuzz,
+  and clean-room evidence jobs.
 - Fresh technical and claims reviews found three bounded issues: missing
   `FrameOverflow` atomicity coverage, wording that accidentally extended the
   190 documented-vector bus oracle to undocumented opcodes, and publication of
