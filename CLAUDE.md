@@ -265,6 +265,10 @@ repository.
   Timed VBlank now drives the existing edge-triggered CPU NMI path under the
   documented three-PPU-dots-then-one-CPU-access phase. These are generated
   self-tests, not independent proof of rendering or dot-exact status races.
+- Published the verified 61-file PPU register/address-space shell checkpoint as
+  `86f0b4a0d12d2223cfd25bb64066ceb443dde06b` to
+  `PandaCatz/PandaUniEmu@main`. The deletion-safe preview found no missing
+  managed files and excluded all local ROM/log and external-oracle material.
 - Fresh technical and claims reviews found three bounded issues: missing
   `FrameOverflow` atomicity coverage, wording that accidentally extended the
   190 documented-vector bus oracle to undocumented opcodes, and publication of

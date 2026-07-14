@@ -35,7 +35,8 @@ frontend, or playable emulation.
 
 ## Implemented this session
 
-PPU register/address-space shell checkpoint (2026-07-14, publication pending):
+PPU register/address-space shell checkpoint (2026-07-14, published in
+`86f0b4a0d12d2223cfd25bb64066ceb443dde06b`):
 
 - Added the eight CPU-visible PPU ports with `$2000-$3FFF` mirroring, a distinct
   PPU I/O latch, PPUSTATUS side effects, shared `v/t/fine-X/write-toggle` state,
@@ -64,6 +65,11 @@ PPU register/address-space shell checkpoint (2026-07-14, publication pending):
   clean-room generator and six Python checks passed; the pinned transistor
   oracle passed; both parser fuzz targets completed 10,000 Windows ASan runs;
   and the release synthetic CLI hashes are unchanged.
+- The deletion-safe 61-file publisher preview found no missing managed files,
+  validated every allowlisted file through its in-root handle, and excluded all
+  local ROMs/logs and external oracle material. The verified checkpoint was
+  published to `PandaCatz/PandaUniEmu@main` as
+  `86f0b4a0d12d2223cfd25bb64066ceb443dde06b`.
 
 Live interrupt/reset oracle checkpoint (2026-07-14, published in
 `0121c134533f2f0d9c84ba3be97984555ac1f6f5`):
