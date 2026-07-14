@@ -71,3 +71,15 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Optional external perfect6502 verification oracle
+-------------------------------------------------
+
+The repository includes a project-owned acquisition/build verifier and harness
+for mist64/perfect6502 commit 09fc542877a84318291aa42dab143a3e2c3db974.
+No perfect6502 source, netlist, or generated binary is included in PandaUniEmu.
+The upstream simulator C files carry MIT notices. The separately acquired
+netlist_6502.h carries a CC BY-NC-SA 3.0 notice, copyright Greg James, Brian
+Silverman, and Barry Silverman, with attribution to Greg James and
+www.visual6502.org. Its noncommercial and ShareAlike terms continue to apply to
+the locally downloaded material. See docs/compatibility/PERFECT6502_PROVENANCE.md.

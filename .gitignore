@@ -1,5 +1,14 @@
 /target/
 /external-fixtures/
+
+# Optional mixed-license perfect6502 oracle must remain outside the repository.
+PandaUniEmu-perfect6502-*/
+PandaUniEmu-perfect6502-*.zip
+perfect6502-*/
+perfect6502-oracle.exe
+perfect6502-oracle.obj
+perfect6502.obj
+netlist_sim.obj
 __pycache__/
 *.py[cod]
 

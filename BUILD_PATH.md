@@ -7,13 +7,14 @@ single-step oracle sample, clean-room NROM/py65 integration checkpoint, and
 bounded operator-path trace commands now exist.
 The strict command enforces the reviewed fixture identity and expected summary
 shape. The full independent mapper-0 CPU trace now passes all 8,991 rows / 8,990
-transitions. Architectural IRQ/NMI/reset sampling and entry are implemented at
-instruction granularity, and all 190 pinned instruction bus traces match their
-ordered read/write oracle. The first exact NTSC master-clock and PPU-dot timing
+transitions. Live seven-cycle IRQ/NMI/reset entry, second-to-last-cycle polling,
+and NMI hijacking are independently verified, and all 190 pinned instruction
+bus traces match their ordered read/write oracle. The first exact NTSC
+master-clock and PPU-dot timing
 model is tested. Instruction execution now yields after each live bus cycle, and
 a machine-owned boundary advances the scheduler once per successful CPU cycle.
-Per-cycle hardware interrupt/reset entry, PPU registers/rendering, APU, DMA, and
-the frontend remain work, not claims of implementation.
+PPU registers/rendering, APU, DMA, and the frontend remain work, not claims of
+implementation.
 
 ## 1. Scaffold only the shared contracts and NES slice
 
@@ -184,7 +185,9 @@ result, and date. Performance gates use release builds and measured budgets.
 11. Completed: make instruction execution cycle-steppable, preserve the `step`
     wrapper, and connect a machine-owned mapper bus and NTSC scheduler at one
     CPU bus cycle per call with exact-cycle event/fault reporting.
-12. Next: verify hardware interrupt/reset cycle entry, polling, and hijacking;
-    then add PPU registers/addressing/rendering plus DMA/APU behavior.
-13. Reach the headless NROM video/audio gate, then resolve and spike
+12. Completed: verify seven-cycle hardware IRQ/NMI/reset entry,
+    second-to-last-cycle polling (including every branch path), and BRK/IRQ NMI
+    hijacking against the pinned external transistor-level oracle.
+13. Next: add PPU registers/addressing/rendering plus DMA/APU behavior.
+14. Reach the headless NROM video/audio gate, then resolve and spike
    `winit`/`wgpu`/`cpal` for the minimal frontend.

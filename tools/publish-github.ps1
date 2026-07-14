@@ -109,9 +109,11 @@ $exactFiles = @(
     'tools/check-cleanroom-nrom.py',
     'tools/curate-nes6502-vectors.ps1',
     'tools/generate-cleanroom-nrom.py',
+    'tools/perfect6502-oracle.c',
     'tools/publish-github.ps1',
     'tools/run-fuzz.ps1',
-    'tools/test_generate_cleanroom_nrom.py'
+    'tools/test_generate_cleanroom_nrom.py',
+    'tools/verify-perfect6502.ps1'
 )
 
 function Test-PublishablePath {

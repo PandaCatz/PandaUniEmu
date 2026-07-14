@@ -16,7 +16,9 @@ PPU-dot timing checkpoint covers VBlank edges and the odd-frame skipped dot.
 Instruction execution now yields after each live bus cycle, while the
 machine-owned boundary advances the scheduler by 12 master ticks / 3 PPU dots
 and exposes exact-cycle VBlank events and mapper-bus faults. Hardware
-interrupt/reset cycle entry and PPU registers/rendering are next. The host
+IRQ/NMI/reset entry, second-to-last-cycle polling, and NMI hijacking are now
+verified against a pinned transistor-level oracle. PPU registers/rendering are
+next. The host
 frontend intentionally follows the verified headless NES path. See `CLAUDE.md`
 for evidence and exact next tasks.
 

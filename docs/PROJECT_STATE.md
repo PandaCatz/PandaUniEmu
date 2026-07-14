@@ -5,10 +5,11 @@ Last updated: 2026-07-14
 ## Current phase
 
 The Phase 1 headless foundation is implemented. The Phase 2 NTSC NES vertical
-slice has passed the independent CPU trace, has architectural interrupt and reset
-handling (IRQ/NMI line sampling, the one-instruction `I`-flag delay, edge-triggered
-NMI, the seven-cycle interrupt/reset sequences; shipped as commit `e6b32c9a`), and
-now matches the sampled documented 6502 bus sequences in the pinned oracle. The
+slice has passed the independent CPU trace and now has live interrupt and reset
+handling: IRQ/NMI line sampling, the one-instruction `I`-flag delay, edge-triggered
+NMI, exact seven-cycle IRQ/NMI/reset bus sequences, second-to-last-cycle polling,
+and BRK/IRQ NMI hijacking. It now matches the sampled documented 6502 bus
+sequences in the pinned oracle. The
 SingleStepTests per-cycle bus traces are pinned as an oracle and a strict test
 matches all 190 vectors byte for byte. The 76 supported undocumented encodings
 retain instruction-boundary/cycle evidence, not ordered bus-trace evidence. The
@@ -16,8 +17,8 @@ CPU now exposes one live bus read/write per successful `clock` call while the
 compatible `step` wrapper completes an instruction. A machine-owned boundary
 composes that interface with mapper 0 and advances the exact NTSC scheduler by
 12 master ticks / 3 PPU dots per CPU cycle, exposing exact-cycle VBlank events
-and bus faults. Hardware interrupt/reset entry is still a whole operation, and
-no PPU register or rendering device exists.
+and bus faults. Interrupt and scheduled warm-reset entry use that same live
+machine boundary. No PPU register or rendering device exists.
 Seven functional workspace crates exist. The
 reviewed QMT `nestest` pair passes 8,991 rows / 8,990
 transitions through the mapper-0 CPU bus, including the exact 76 stable
@@ -30,6 +31,35 @@ PPU/APU, mapper 1, complete NES machine, host
 frontend, or playable emulation.
 
 ## Implemented this session
+
+Live interrupt/reset oracle checkpoint (2026-07-14, publication pending):
+
+- Replaced whole-operation-only hardware entry with typed live interrupt and
+  reset microstates. Each `clock` call performs exactly one of the two current-PC
+  reads, three stack accesses, or two vector reads and returns typed
+  `InterruptComplete`/`ResetComplete` outcomes on cycle seven. Compatibility
+  wrappers still drain the same live path.
+- Moved physical interrupt sampling to the second-to-last instruction cycle,
+  including the distinct not-taken, same-page-taken, and page-crossing branch
+  paths. Accepted interrupts begin automatically on the next machine clock;
+  the established `CLI`/`SEI`/`PLP` delay and immediate `RTI` behavior remain
+  covered.
+- Added BRK/IRQ NMI hijacking with vector choice locked after the low-PC push.
+  An earlier edge selects `$FFFA`; a later edge leaves `$FFFE` selected and
+  remains pending.
+- Added `NesMachine::begin_reset` and machine-level tests proving seven reset
+  calls and automatic seven-cycle IRQ entry remain synchronized with mapper bus,
+  CPU cycle, master-tick, and PPU-dot progression.
+- Added `tools/perfect6502-oracle.c` and an opt-in
+  `tools/verify-perfect6502.ps1`. The verifier requires explicit acceptance of
+  the netlist's CC BY-NC-SA 3.0 noncommercial terms, pins the archive and every
+  required file by SHA-256, keeps all upstream material/build output in a temp
+  cache, and checks IRQ, NMI, reset, poll, branch, and hijack traces. Its fresh
+  acquisition path and all comparisons passed locally. The emulator has no
+  build-time or runtime dependency on this oracle.
+- Corrected the initial MIT-only intake: the simulator C is MIT, while required
+  `netlist_6502.h` carries a file-specific CC BY-NC-SA 3.0 notice. No upstream
+  source, netlist, or generated binary is published under the project GPL.
 
 Live CPU-cycle and machine-clock checkpoint (2026-07-14, published in
 `2637b71c7501f0108e1dc1e25a95aadf4fe26eef`):
@@ -44,8 +74,9 @@ Live CPU-cycle and machine-clock checkpoint (2026-07-14, published in
   cycle, require one and only one new access each time, and compare the complete
   ordered trace and final state. Added a live-memory mutation test plus a
   227-encoding differential test against the test-only legacy engine.
-- Hardware `service_interrupt` and `reset` remain boundary-only whole operations
-  and now reject an active instruction without touching state or the bus. Their
+- At that checkpoint, hardware `service_interrupt` and `reset` remained
+  boundary-only whole operations and rejected an active instruction without
+  touching state or the bus. Their
   individual bus cycles, second-to-last-cycle polling, and NMI hijacking remain
   explicitly unclaimed.
 - Split the NTSC scheduler into a failure-atomic one-CPU-cycle preflight/advance
@@ -62,10 +93,10 @@ Live CPU-cycle and machine-clock checkpoint (2026-07-14, published in
   machine timing-overflow atomicity, and the exact CPU/master/PPU state on the
   VBlank delivery call. Independent bus-order evidence for the 76 undocumented
   encodings is still open and explicitly unclaimed.
-- Pinned the planned MIT `perfect6502` oracle at commit
+- Pinned the planned mixed-license `perfect6502` oracle at commit
   `09fc542877a84318291aa42dab143a3e2c3db974` and archive SHA-256
   `594553a873d66a13e88c134495c9f55e064a36ba4670b07fba71f5047a77bdf5`.
-  No upstream source or result is committed, and no current claim relies on it.
+  No upstream source or result was committed at that checkpoint.
 - Published the reviewed 58-file snapshot to `PandaCatz/PandaUniEmu@main` as
   `2637b71c7501f0108e1dc1e25a95aadf4fe26eef`. The deletion-safe preview found
   no missing managed files, validated every allowlisted file through its
@@ -287,12 +318,12 @@ nightly-2026-07-12 on 2026-07-14:
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 106 passed, 0 failed.
-- Release tests: 106 passed, 0 failed; doc tests passed.
-- The 38 `cpu-6502` tests cover one-access-per-clock behavior, live operand
+- Debug tests: 116 passed, 0 failed.
+- Release tests: 116 passed, 0 failed; debug/release doc tests passed.
+- The 46 `cpu-6502` tests cover one-access-per-clock behavior, live operand
   mutation, all-227 differential equivalence, active-instruction boundary
   rejection, and all 190 pinned bus/state vectors.
-- The 20 `core-nes` tests cover the prior timing model plus exact CPU-cycle
+- The 22 `core-nes` tests cover the prior timing model plus exact CPU-cycle
   scheduler progression, exact-cycle bus faults, and VBlank event delivery.
 - All six focused NTSC timing tests passed, including exact master-clock event
   timestamps, both VBlank edges, rendering-enabled 89,342/89,341-dot frame
@@ -309,6 +340,10 @@ nightly-2026-07-12 on 2026-07-14:
   passed all six Python generator tests.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
+- The opt-in `perfect6502` acquisition gate downloaded the exact pinned archive
+  into a fresh temp cache, verified the archive and seven required file hashes,
+  compiled the project-owned harness, and matched every curated IRQ/NMI/reset,
+  poll, branch, and hijack comparison.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash
   `b2bdf29fe8dd6d45`, and event hash `2343096cdf497a5e`.
 - The strict release `nestest-v1` command matched all 8,991 rows / 8,990
@@ -417,8 +452,10 @@ Ubuntu 24.04.
 - The runner uses the first reference row's raw cycle convention and never
   renormalizes later rows.
 - All 190 sampled instructions match their exact ordered bus traces through the
-  live one-cycle interface. Hardware interrupt/reset entry is not bus-cycle
-  verified, and the complete machine is not cycle-accurate.
+  live one-cycle interface. Hardware IRQ/NMI/reset entry and the selected poll/
+  hijack cases now have separate transistor-level evidence. Undocumented bus
+  order, asynchronous mid-instruction reset takeover, DMA/RDY, and the complete
+  machine remain outside the cycle-accuracy claim.
 - The clean-room NROM cases are independent mapper-0 architectural evidence,
   not evidence for reset timing, interrupts, bus order, PPU/APU behavior, MMC1,
   or gameplay.
@@ -431,11 +468,9 @@ Ubuntu 24.04.
 
 ## Next action
 
-First curate a minimal, license-preserving `perfect6502` harness from the pinned
-source and use it to verify live hardware IRQ/NMI/reset bus entry,
-second-to-last-cycle polling, and NMI hijacking. Then introduce the PPU
-register/address-space shell into the existing machine boundary, route mirrored
-`$2000-$3FFF` CPU accesses, and connect timed VBlank/NMI behavior. Verify every
+Introduce the PPU register/address-space shell into the existing machine
+boundary, route mirrored `$2000-$3FFF` CPU accesses, and connect timed
+VBlank/NMI behavior. Verify every
 increment with the existing state/bus oracles plus focused PPU register/timing
 tests. Rendering fetches, scrolling, sprites, DMA/APU, and the headless
 video/audio gate follow. Only after that mapper-0 whole-machine gate should MMC1
@@ -465,7 +500,7 @@ dry-run validated all 50 allowlisted files without making a GitHub write.
 
 ## Environment notes
 
-`git` is not installed/on `PATH`. Publishing uses the authenticated, allowlisted
-Git Data API script, preserves remote-only files by default, and requires a dry
-run. On x64 Windows, use `tools/run-fuzz.ps1` so the Visual Studio AddressSanitizer
+Publishing uses the authenticated, allowlisted Git Data API script, preserves
+remote-only files by default, and requires a dry run. On x64 Windows, use
+`tools/run-fuzz.ps1` so the Visual Studio AddressSanitizer
 runtime is placed on the child process path.

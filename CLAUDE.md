@@ -58,16 +58,16 @@ The workspace contains seven functional crates:
   flags, cycle totals, stack/control flow, decode metadata, a pinned MIT
   documented-opcode single-step oracle sample, strict ordered bus traces for all
   190 sampled vectors through a live one-cycle `clock` interface, a compatible
-  whole-instruction `step` wrapper, and instruction-granular interrupt/reset handling
+  whole-instruction `step` wrapper, and live-cycle interrupt/reset handling
   (edge-triggered NMI, level-triggered IRQ, the one-instruction `I`-flag delay,
-  and the seven-cycle interrupt/reset sequences).
+  exact seven-cycle entry, second-to-last-cycle polling, and NMI hijacking).
 
 The fuzz project calls both format parsers with arbitrary bytes. The checked-in
 launcher generates redistribution-safe seeds and handles the Windows
 AddressSanitizer runtime path.
 
 Not implemented: `retro-frontend`, a complete NES machine, PPU/APU/I/O bus
-devices, per-cycle hardware interrupt/reset entry and NMI hijacking, DMA, input
+devices, asynchronous mid-instruction reset takeover, DMA/RDY, input
 hardware, SRAM persistence, save states, rewind, or any GBA/Genesis/SNES code.
 The CPU and timing scheduler are connected at one live mapper-bus cycle per
 machine call, but there is no PPU register or rendering device yet.
@@ -77,6 +77,12 @@ The operator's 31-file NES instruction folder is located at
 `docs/NES_REFERENCE_INTAKE.md` as an external, unattributed AI-generated
 scaffold. Use it only as a subsystem checklist; do not publish its originals or
 treat its code/claims as an oracle.
+
+The optional pinned `perfect6502` development checkout is acquired to
+`%TEMP%\PandaUniEmu-perfect6502-09fc542\perfect6502-09fc542877a84318291aa42dab143a3e2c3db974`.
+It is a disposable local oracle cache, not a project/runtime directory; recreate
+and verify it with `tools/verify-perfect6502.ps1` instead of copying it into the
+repository.
 
 ## Completed work
 
@@ -223,6 +229,25 @@ treat its code/claims as an oracle.
   commit `2637b71c7501f0108e1dc1e25a95aadf4fe26eef` to
   `PandaCatz/PandaUniEmu@main`. The final deletion-safe preview found no missing
   managed files and preserved the parent tree and all non-allowlisted files.
+- Implemented and locally verified the live interrupt/reset checkpoint. Typed
+  interrupt and reset microstates now issue one real bus access per `clock`
+  call and return completion on cycle seven; accepted IRQ/NMI begins
+  automatically through `NesMachine`, and scheduled warm reset uses the same
+  CPU/master/PPU lockstep boundary. Physical polling occurs on the
+  second-to-last cycle, with explicit not-taken, same-page-taken, and
+  page-crossing branch handling. BRK/IRQ vector choice locks after the low-PC
+  push, allowing correctly timed NMI hijacking while preserving a later edge.
+- Added the project-owned `tools/perfect6502-oracle.c` and opt-in
+  `tools/verify-perfect6502.ps1`. The latter requires
+  `-AcceptNonCommercialLicense`, optionally acquires only the exact pinned
+  archive, verifies its SHA-256 plus every required file, compiles in `%TEMP%`,
+  and numerically checks IRQ, NMI, reset, polling, branch, and hijack traces.
+  A fresh acquisition/build/compare run passed. Upstream source and generated
+  binaries remain local and are neither published nor required by PandaUniEmu.
+- Corrected the oracle license record: the simulator C files are MIT, but the
+  required `netlist_6502.h` is CC BY-NC-SA 3.0 with its own attribution,
+  noncommercial, and ShareAlike terms. The public repository contains only the
+  project-owned harness/verifier, factual measurements, and provenance.
 - Fresh technical and claims reviews found three bounded issues: missing
   `FrameOverflow` atomicity coverage, wording that accidentally extended the
   190 documented-vector bus oracle to undocumented opcodes, and publication of
@@ -239,23 +264,26 @@ treat its code/claims as an oracle.
 
 ## Required commands
 
-Run from `H:\claaaude\universal-retro-emulator`:
+Run from the repository root:
 
 ```powershell
 python tools/check-cleanroom-nrom.py
 cargo run --release -p retro-cli -- nestest-v1 external-fixtures\nestest.nes external-fixtures\nestest.log
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo build --workspace --all-targets --all-features
+cargo build --release --workspace --all-targets --all-features
 cargo test --workspace --all-targets --all-features
-cargo test --release --workspace
+cargo test --release --workspace --all-targets --all-features
 cargo run --release -p retro-cli
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/verify-perfect6502.ps1 -AcceptNonCommercialLicense
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/run-fuzz.ps1 -Runs 10000
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/publish-github.ps1 -Message '<verified milestone>' -WhatIf
 ```
 
 After all gates and the dry run pass, remove `-WhatIf` to publish the allowlisted
-snapshot to `PandaCatz/PandaUniEmu`. Git is not installed, so the script creates
-a normal non-force commit through GitHub's Git Data API. Existing remote files
+snapshot to `PandaCatz/PandaUniEmu`. The script creates a normal non-force commit
+through GitHub's Git Data API. Existing remote files
 are preserved by default; deletion requires the explicit
 `-DeleteMissingManagedFiles` switch and review of its preview.
 
@@ -266,11 +294,11 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 106 passed, 0 failed.
-- Release tests: 106 passed, 0 failed; doc tests passed.
-- `cpu-6502`: 38 tests passed, including live per-cycle access, mutation,
+- Debug tests: 116 passed, 0 failed.
+- Release tests: 116 passed, 0 failed; debug/release doc tests passed.
+- `cpu-6502`: 46 tests passed, including live per-cycle access, mutation,
   227-encoding differential, boundary rejection, and the 190-vector oracle.
-- `core-nes`: 20 tests passed, including all scheduler and machine-cycle tests.
+- `core-nes`: 22 tests passed, including all scheduler and machine-cycle tests.
 - All six new NTSC timing tests passed: exact 3:1 CPU/PPU progression, VBlank
   edges and master timestamp, 89,342/89,341-dot frame alternation, no shortened
   frame while rendering is disabled, and failure-atomic overflow.
@@ -278,6 +306,9 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
   `a53a81800b37bbfb5f5101785974bbed9070c103a09d206988101a79969922fa`.
 - Every one of the 190 pinned ordered instruction bus traces matches exactly;
   the final-state oracle passes too.
+- Fresh opt-in `perfect6502` acquisition, archive/file hashing, external build,
+  and all IRQ/NMI/reset, poll, branch, and NMI-hijack comparisons passed. The
+  upstream checkout and executable remained under `%TEMP%`.
 - The clean-room verifier downloaded the pinned py65 source/license, reproduced
   all three cases at generated SHA-256
   `02f88830b4af0d46b3ba542a713c4fddd94f6c9af4f9b49e69d92bc03a3bfab5`, and
@@ -379,20 +410,15 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 
 ## Next tasks, in order
 
-1. Curate a minimal reproducible harness from the pinned MIT `perfect6502`
-   source recorded in `docs/compatibility/PERFECT6502_PROVENANCE.md`; use it to
-   verify and implement live hardware IRQ/NMI/reset bus entry, second-to-last
-   cycle polling, and NMI hijacking without weakening the current 190-vector
-   and full-trace gates.
-2. Add the PPU register/address-space shell to the existing machine boundary,
+1. Add the PPU register/address-space shell to the existing machine boundary,
    route mirrored
    `$2000-$3FFF` CPU accesses, and connect the verified VBlank timeline to the
    CPU NMI line. Continue with fetch, scroll, sprite, and rendering oracles.
-3. Add DMA/APU/input and reach a deterministic headless NROM video/audio
+2. Add DMA/APU/input and reach a deterministic headless NROM video/audio
    checkpoint.
-4. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
+3. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
    mirroring, reset, and PRG RAM, for the supplied mapper-1 target.
-5. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
+4. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
 
 ## Decisions still open
 
@@ -420,10 +446,12 @@ The synthetic core proves only the shared contract/headless capture path. The
 CPU now has independent instruction-boundary samples across all documented
 encodings and passes the full mapper-0 `nestest` architectural trace, including
 its 76 stable undocumented encodings. All 190 sampled ordered instruction bus
-traces match through a live one-cycle interface, but the sample is not exhaustive,
-and hardware interrupt/reset entry bus order, sub-instruction polling, and NMI
-hijacking remain unchecked. The machine boundary advances the NTSC scheduler
-after each successful instruction bus cycle and exposes timed events/faults; it
+traces match through a live one-cycle interface, but the sample is not exhaustive.
+Hardware IRQ/NMI/reset entry, selected poll positions, and NMI hijacking have
+separate transistor-level evidence. Undocumented-opcode bus order, asynchronous
+mid-instruction reset takeover, DMA/RDY, and exhaustive NMI edge cases remain
+unchecked. The machine boundary advances the NTSC scheduler after each
+successful CPU bus cycle and exposes timed events/faults; it
 is not connected to PPU registers or rendering. DMA, APU, input, gameplay, and mapper 1 remain
 unimplemented. PPU/APU/I/O are intentionally faulted outside the strict CLI's
 reviewed trace-write allowlist. This is not a playable NES emulator.

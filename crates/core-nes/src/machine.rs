@@ -52,6 +52,12 @@ impl NesMachine {
         self.cpu.set_irq_line(asserted);
     }
 
+    /// Schedules the seven-cycle warm-reset sequence. Each later `clock` call
+    /// advances exactly one reset bus read and one NTSC CPU cycle.
+    pub fn begin_reset(&mut self) -> Result<(), MachineError> {
+        self.cpu.begin_reset().map_err(MachineError::from)
+    }
+
     /// Clocks one live CPU bus access. Timing is precomputed on a clone and only
     /// committed if the CPU cycle succeeds, so timing overflow cannot leave the
     /// CPU and scheduler in different cycles.
@@ -108,6 +114,7 @@ impl From<TimingError> for MachineError {
 mod tests {
     use super::*;
     use crate::MASTER_TICKS_PER_CPU_CYCLE;
+    use cpu_6502::{FLAG_INTERRUPT_DISABLE, FLAG_UNUSED, Interrupt};
 
     fn cartridge_with_program(program: &[u8]) -> NesCartridge {
         let mut bytes = vec![0; 16 + 16 * 1024 + 8 * 1024];
@@ -116,6 +123,9 @@ mod tests {
         bytes[5] = 1;
         bytes[16..16 + 16 * 1024].fill(0xea);
         bytes[16..16 + program.len()].copy_from_slice(program);
+        bytes[16 + 0x3ffa..16 + 0x3ffc].copy_from_slice(&0xa000_u16.to_le_bytes());
+        bytes[16 + 0x3ffc..16 + 0x3ffe].copy_from_slice(&0x8000_u16.to_le_bytes());
+        bytes[16 + 0x3ffe..16 + 0x4000].copy_from_slice(&0x9000_u16.to_le_bytes());
         let parsed = format_ines::parse(&bytes).expect("generated NROM image parses");
         NesCartridge::from_parsed(parsed).expect("generated NROM cartridge is supported")
     }
@@ -193,6 +203,80 @@ mod tests {
             MASTER_TICKS_PER_CPU_CYCLE
         );
         assert_eq!(machine.scheduler().ppu().position().dot, 3);
+    }
+
+    #[test]
+    fn warm_reset_clocks_seven_machine_cycles_in_lockstep() {
+        let mut state = CpuState::at(0x8005);
+        state.status &= !FLAG_INTERRUPT_DISABLE;
+        let mut machine = NesMachine::new(cartridge_with_program(&[]), state);
+        machine.begin_reset().expect("reset scheduling succeeds");
+
+        for cycle_index in 1..=7 {
+            let cycle = machine.clock().expect("reset bus cycle succeeds");
+            assert_eq!(cycle.bus_fault, None);
+            if cycle_index < 7 {
+                assert_eq!(cycle.cpu, ClockOutcome::InProgress);
+            } else {
+                let ClockOutcome::ResetComplete(entry) = cycle.cpu else {
+                    panic!("reset must complete on its seventh live bus cycle");
+                };
+                assert_eq!(entry.cycles, 7);
+                assert_eq!(entry.before.pc, 0x8005);
+                assert_eq!(entry.after.pc, 0x8000);
+                assert_eq!(entry.after.sp, 0xfa);
+                assert_ne!(entry.after.status & FLAG_INTERRUPT_DISABLE, 0);
+            }
+        }
+
+        assert_eq!(machine.cpu().state().total_cycles, 7);
+        assert_eq!(
+            machine.scheduler().master_ticks(),
+            7 * MASTER_TICKS_PER_CPU_CYCLE
+        );
+        assert_eq!(machine.scheduler().ppu().position().dot, 21);
+    }
+
+    #[test]
+    fn accepted_irq_enters_automatically_through_the_machine_scheduler() {
+        let mut state = CpuState::at(0x8000);
+        state.status = FLAG_UNUSED;
+        let mut machine = NesMachine::new(cartridge_with_program(&[0xea, 0xea]), state);
+        machine.set_irq_line(true);
+
+        assert_eq!(
+            machine.clock().expect("NOP fetch succeeds").cpu,
+            ClockOutcome::InProgress
+        );
+        assert!(matches!(
+            machine.clock().expect("NOP completion succeeds").cpu,
+            ClockOutcome::InstructionComplete(_)
+        ));
+
+        for entry_cycle in 1..=7 {
+            let cycle = machine.clock().expect("IRQ entry cycle succeeds");
+            assert_eq!(cycle.bus_fault, None);
+            if entry_cycle < 7 {
+                assert_eq!(cycle.cpu, ClockOutcome::InProgress);
+            } else {
+                let ClockOutcome::InterruptComplete(entry) = cycle.cpu else {
+                    panic!("IRQ must complete on its seventh live bus cycle");
+                };
+                assert_eq!(entry.origin, Interrupt::Irq);
+                assert_eq!(entry.kind, Interrupt::Irq);
+                assert_eq!(entry.vector, 0xfffe);
+                assert_eq!(entry.cycles, 7);
+                assert_eq!(entry.before.pc, 0x8001);
+                assert_eq!(entry.after.pc, 0x9000);
+            }
+        }
+
+        assert_eq!(machine.cpu().state().total_cycles, 9);
+        assert_eq!(
+            machine.scheduler().master_ticks(),
+            9 * MASTER_TICKS_PER_CPU_CYCLE
+        );
+        assert_eq!(machine.scheduler().ppu().position().dot, 27);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # Review of the Source Proposal
 
 Reviewed 2026-07-13. Source:
-`C:\Users\rezta\Desktop\Universal Retro Emulator  NES, SNES, Sega Genesis & GBA in Rust.md`
+`%USERPROFILE%\Desktop\Universal Retro Emulator  NES, SNES, Sega Genesis & GBA in Rust.md`
 
 ## Verdict
 

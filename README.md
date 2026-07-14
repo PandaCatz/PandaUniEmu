@@ -17,7 +17,8 @@ Genesis / Mega Drive, and SNES cores.
 > boundary. PPU registers and rendering, APU, input hardware, a complete NES
 > machine, and the graphical frontend are not yet implemented. Instruction
 > execution yields after every live bus cycle and all 190 sampled instruction
-> traces match, but hardware interrupt/reset entry is not bus-cycle verified.
+> traces match. Live IRQ, NMI, and reset entry, second-to-last-cycle polling,
+> and NMI hijacking are also verified against a pinned transistor-level oracle.
 > The project does not currently play games.
 
 ## Current status
@@ -30,7 +31,7 @@ Genesis / Mega Drive, and SNES cores.
 | Stable undocumented CPU encodings | Verified checkpoint | The exact 76 encodings exercised by `nestest` pass |
 | Independent full CPU trace | Passed | 8,991 rows / 8,990 transitions, final `PC=C66E`, 26,554 cycles |
 | CPU cycle stepping and bus order | Verified checkpoint | Each successful `clock` call performs one live read/write; all 190 pinned vectors match byte for byte; `step` remains as a compatibility wrapper |
-| IRQ, NMI, and reset | Architectural checkpoint | Edge/level sampling, `I`-flag delay, frames, vectors, and seven-cycle totals are tested; hardware entry bus order remains open |
+| IRQ, NMI, and reset | Verified live-cycle checkpoint | Seven bus cycles per entry, second-to-last-cycle polling, branch paths, and BRK/IRQ NMI hijacking match the pinned external transistor oracle |
 | Mapper 0 CPU integration | Verified checkpoint | NROM-128, NROM-256, PRG RAM, trainer preload, and clean-room traces |
 | NTSC timing foundation | Verified checkpoint | Exact 12:4 master-clock divisors, VBlank edges, 341×262 geometry, and rendering-dependent odd-frame shortening |
 | Machine CPU/timing boundary | Verified checkpoint | One CPU bus cycle advances exactly 12 master ticks / 3 PPU dots; VBlank events and exact-cycle bus faults are observable |
@@ -75,7 +76,7 @@ Published checkpoints and their Windows/Ubuntu CI evidence are available in the
 - [x] Add the first exact NTSC master-clock scheduler and PPU-dot timing oracle.
 - [x] Make instruction execution cycle-steppable, retain the whole-instruction
   wrapper, and connect each successful CPU bus cycle to the NTSC scheduler.
-- [ ] Verify hardware interrupt/reset entry bus order, sub-instruction polling,
+- [x] Verify hardware interrupt/reset entry bus order, sub-instruction polling,
   and NMI hijacking against an independent oracle.
 - [ ] Add PPU registers, address-space mapping, fetches, and rendering on the
   verified dot timeline.
@@ -171,6 +172,18 @@ cargo run --release -p retro-cli -- nestest-v1 $romPath $logPath
 ```
 
 External ROMs and logs are never required for ordinary builds or CI.
+
+Developers can optionally reproduce the transistor-level CPU interrupt oracle
+in a local temp cache. This is not required to build or run PandaUniEmu:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/verify-perfect6502.ps1 -Acquire -AcceptNonCommercialLicense
+```
+
+The required netlist is downloaded directly from its pinned upstream source and
+is governed by CC BY-NC-SA 3.0. It is never copied into this repository or a
+PandaUniEmu release. See
+[the oracle provenance record](docs/compatibility/PERFECT6502_PROVENANCE.md).
 
 ## Built with AI
 

@@ -435,8 +435,19 @@ pub enum ClockOutcome {
     InProgress,
     /// The bus cycle completed the instruction.
     InstructionComplete(StepTrace),
+    /// The bus cycle completed a live hardware interrupt entry sequence.
+    InterruptComplete(InterruptEntry),
+    /// The bus cycle completed a live warm-reset sequence.
+    ResetComplete(ResetEntry),
     /// The opcode fetch consumed a cycle, but the byte is not implemented.
     UnsupportedOpcode { pc: u16, opcode: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActiveOperation {
+    Instruction(ActiveInstruction),
+    Interrupt(ActiveInterrupt),
+    Reset(ActiveReset),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -507,7 +518,44 @@ enum BrkStage {
     Padding,
     PushHigh,
     PushLow,
-    PushStatus,
+    PushStatus { source: Interrupt },
+    VectorLow { source: Interrupt },
+    VectorHigh { source: Interrupt, low: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ActiveInterrupt {
+    before: CpuState,
+    origin: Interrupt,
+    cycles: u8,
+    stage: InterruptStage,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InterruptStage {
+    FirstPcRead,
+    SecondPcRead,
+    PushHigh,
+    PushLow,
+    PushStatus { source: Interrupt },
+    VectorLow { source: Interrupt },
+    VectorHigh { source: Interrupt, low: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ActiveReset {
+    before: CpuState,
+    cycles: u8,
+    stage: ResetStage,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ResetStage {
+    FirstPcRead,
+    SecondPcRead,
+    StackRead,
+    StackReadOne,
+    StackReadTwo,
     VectorLow,
     VectorHigh { low: u8 },
 }
@@ -590,10 +638,20 @@ impl Interrupt {
 /// The architectural effect of servicing a hardware interrupt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InterruptEntry {
+    /// Source that began entry before any possible NMI hijack.
+    pub origin: Interrupt,
+    /// Vector source ultimately selected by the live sequence.
     pub kind: Interrupt,
     pub before: CpuState,
     pub after: CpuState,
     pub vector: u16,
+    pub cycles: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResetEntry {
+    pub before: CpuState,
+    pub after: CpuState,
     pub cycles: u8,
 }
 
@@ -629,7 +687,7 @@ impl Error for CpuError {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cpu {
     state: CpuState,
-    active: Option<ActiveInstruction>,
+    active: Option<ActiveOperation>,
     /// Last observed level of the NMI line (`true` when asserted), used to detect
     /// the high-to-low edge that latches an NMI.
     nmi_level: bool,
@@ -639,10 +697,10 @@ pub struct Cpu {
     /// Current level of the IRQ line (`true` when asserted). IRQ is level-driven,
     /// so it is re-evaluated at every interrupt poll rather than latched.
     irq_level: bool,
-    /// The interrupt-disable (`I`) flag value the most recent interrupt poll
-    /// observed. This honors the one-instruction delay of `CLI`/`SEI`/`PLP`,
-    /// whose flag change lands after the poll.
-    poll_interrupt_disable: bool,
+    /// Interrupt decision captured at the instruction's physical poll cycle.
+    polled_interrupt: Option<Interrupt>,
+    /// Distinguishes an explicit poll that found no source from no poll yet.
+    poll_valid: bool,
 }
 
 // Eight is the largest cycle total among the documented instructions and the
@@ -677,7 +735,8 @@ impl Cpu {
             nmi_level: false,
             nmi_pending: false,
             irq_level: false,
-            poll_interrupt_disable: state.status & FLAG_INTERRUPT_DISABLE != 0,
+            polled_interrupt: None,
+            poll_valid: false,
         };
         cpu.normalize_status();
         cpu
@@ -696,8 +755,8 @@ impl Cpu {
         self.nmi_level = false;
         self.nmi_pending = false;
         self.irq_level = false;
-        // The power-on state has the `I` flag set.
-        self.poll_interrupt_disable = true;
+        self.polled_interrupt = None;
+        self.poll_valid = false;
         Ok(())
     }
 
@@ -717,29 +776,45 @@ impl Cpu {
         self.irq_level = asserted;
     }
 
-    /// The interrupt that would be serviced before the next instruction, based on
-    /// the line state and the most recent interrupt poll. NMI outranks IRQ, and a
-    /// level-triggered IRQ is only reported while the polled `I` flag was clear.
+    /// The interrupt accepted by the most recent physical poll. Before the first
+    /// poll, this reports the current combinational line state for compatibility
+    /// with boundary-driven callers.
     #[must_use]
     pub const fn pending_interrupt(&self) -> Option<Interrupt> {
-        if self.nmi_pending {
+        if self.poll_valid {
+            self.polled_interrupt
+        } else if self.nmi_pending {
             Some(Interrupt::Nmi)
-        } else if self.irq_level && !self.poll_interrupt_disable {
+        } else if self.irq_level && self.state.status & FLAG_INTERRUPT_DISABLE == 0 {
             Some(Interrupt::Irq)
         } else {
             None
         }
     }
 
-    /// Services a hardware interrupt: pushes the return address and status (with
-    /// the `B` flag clear), sets the `I` flag, and loads the source's vector. The
-    /// seven-cycle count is reserved before any bus access, so an exhausted cycle
-    /// counter leaves the CPU and bus unchanged.
-    ///
-    /// Callers select `kind` from [`Cpu::pending_interrupt`]. Servicing an NMI
-    /// clears its latched edge. Exact per-cycle interrupt bus order and NMI
-    /// hijacking of a BRK/IRQ sequence are part of the deferred per-cycle
-    /// milestone and are not modeled here.
+    /// Installs a live seven-cycle hardware interrupt entry without touching the
+    /// bus. Subsequent [`Cpu::clock`] calls perform the two PC reads, three stack
+    /// writes, and two vector reads one cycle at a time.
+    pub fn begin_interrupt(&mut self, kind: Interrupt) -> Result<(), CpuError> {
+        if self.active.is_some() {
+            return Err(CpuError::OperationInProgress {
+                operation: "begin an interrupt",
+            });
+        }
+        self.require_operation_headroom(INTERRUPT_CYCLES)?;
+        self.polled_interrupt = None;
+        self.poll_valid = false;
+        self.active = Some(ActiveOperation::Interrupt(ActiveInterrupt {
+            before: self.state,
+            origin: kind,
+            cycles: 0,
+            stage: InterruptStage::FirstPcRead,
+        }));
+        Ok(())
+    }
+
+    /// Compatibility wrapper that drains a live interrupt entry. Machine-level
+    /// drivers use `begin_interrupt` plus `clock` so devices advance each cycle.
     pub fn service_interrupt(
         &mut self,
         bus: &mut impl Bus,
@@ -750,66 +825,60 @@ impl Cpu {
                 operation: "service an interrupt",
             });
         }
-        if self
-            .state
-            .total_cycles
-            .checked_add(INTERRUPT_CYCLES)
-            .is_none()
-        {
-            return Err(CpuError::CycleCounterHeadroomExhausted {
-                remaining: (u64::MAX - self.state.total_cycles) as u8,
-            });
+        self.begin_interrupt(kind)?;
+        loop {
+            match self.clock(bus)? {
+                ClockOutcome::InProgress => {}
+                ClockOutcome::InterruptComplete(entry) => return Ok(entry),
+                _ => unreachable!("a typed interrupt operation cannot complete as another kind"),
+            }
         }
-
-        let before = self.state;
-        let vector = kind.vector();
-        self.enter_interrupt_frame(bus, vector, false);
-        self.state.total_cycles += INTERRUPT_CYCLES;
-        if kind == Interrupt::Nmi {
-            self.nmi_pending = false;
-        }
-        // The `I` flag is now set; the next poll observes it as set.
-        self.poll_interrupt_disable = true;
-        self.normalize_status();
-        Ok(InterruptEntry {
-            kind,
-            before,
-            after: self.state,
-            vector,
-            cycles: INTERRUPT_CYCLES as u8,
-        })
     }
 
-    /// Performs a warm reset. Three suppressed stack accesses decrement `SP` by
-    /// three without writing, the `I` flag is set, any latched NMI is dropped, and
-    /// `PC` is loaded from the reset vector. `A`, `X`, `Y`, and the other flags are
-    /// preserved. The seven-cycle count is reserved before any bus access. Exact
-    /// per-cycle reset bus reads are part of the deferred per-cycle milestone.
+    /// Installs a live warm-reset sequence without touching the bus.
+    pub fn begin_reset(&mut self) -> Result<(), CpuError> {
+        if self.active.is_some() {
+            return Err(CpuError::OperationInProgress {
+                operation: "begin reset",
+            });
+        }
+        self.require_operation_headroom(INTERRUPT_CYCLES)?;
+        self.nmi_pending = false;
+        self.polled_interrupt = None;
+        self.poll_valid = false;
+        self.active = Some(ActiveOperation::Reset(ActiveReset {
+            before: self.state,
+            cycles: 0,
+            stage: ResetStage::FirstPcRead,
+        }));
+        Ok(())
+    }
+
+    /// Compatibility wrapper that drains the seven live reset cycles.
     pub fn reset(&mut self, bus: &mut impl Bus) -> Result<(), CpuError> {
         if self.active.is_some() {
             return Err(CpuError::OperationInProgress { operation: "reset" });
         }
-        if self
-            .state
-            .total_cycles
-            .checked_add(INTERRUPT_CYCLES)
-            .is_none()
-        {
+        self.begin_reset()?;
+        loop {
+            match self.clock(bus)? {
+                ClockOutcome::InProgress => {}
+                ClockOutcome::ResetComplete(_) => return Ok(()),
+                _ => unreachable!("a typed reset operation cannot complete as another kind"),
+            }
+        }
+    }
+
+    fn require_operation_headroom(&self, cycles: u64) -> Result<(), CpuError> {
+        if self.state.total_cycles.checked_add(cycles).is_none() {
             return Err(CpuError::CycleCounterHeadroomExhausted {
                 remaining: (u64::MAX - self.state.total_cycles) as u8,
             });
         }
-
-        self.state.sp = self.state.sp.wrapping_sub(3);
-        self.set_flag(FLAG_INTERRUPT_DISABLE, true);
-        self.state.pc = read_u16(bus, RESET_VECTOR);
-        self.state.total_cycles += INTERRUPT_CYCLES;
-        self.nmi_pending = false;
-        self.poll_interrupt_disable = true;
-        self.normalize_status();
         Ok(())
     }
 
+    #[cfg(test)]
     fn enter_interrupt_frame(&mut self, bus: &mut impl Bus, vector: u16, break_flag: bool) {
         self.push_u16(bus, self.state.pc);
         let mut pushed = self.state.status | FLAG_UNUSED;
@@ -827,7 +896,22 @@ impl Cpu {
     /// exactly one bus read or write and increments `total_cycles` by one.
     /// The caller may advance devices and drive interrupt lines between calls.
     pub fn clock(&mut self, bus: &mut impl Bus) -> Result<ClockOutcome, CpuError> {
-        let Some(active) = self.active.take() else {
+        if self.active.is_none()
+            && self.poll_valid
+            && let Some(kind) = self.polled_interrupt
+        {
+            self.begin_interrupt(kind)?;
+        }
+
+        if let Some(active) = self.active.take() {
+            return Ok(match active {
+                ActiveOperation::Instruction(instruction) => self.clock_active(bus, instruction),
+                ActiveOperation::Interrupt(interrupt) => self.clock_interrupt(bus, interrupt),
+                ActiveOperation::Reset(reset) => self.clock_reset(bus, reset),
+            });
+        }
+
+        {
             if self
                 .state
                 .total_cycles
@@ -839,6 +923,8 @@ impl Cpu {
                 });
             }
 
+            self.poll_valid = false;
+            self.polled_interrupt = None;
             let before = self.state;
             let opcode = bus.read(self.state.pc);
             self.state.pc = self.state.pc.wrapping_add(1);
@@ -849,17 +935,19 @@ impl Cpu {
                     opcode,
                 });
             };
-            self.active = Some(ActiveInstruction {
+            let sequence = Self::sequence_for(instruction);
+            if self.sequence_completes_next_cycle(instruction, sequence) {
+                self.poll_interrupt_lines();
+            }
+            self.active = Some(ActiveOperation::Instruction(ActiveInstruction {
                 before,
                 opcode,
                 instruction,
                 cycles: 1,
-                sequence: Self::sequence_for(instruction),
-            });
-            return Ok(ClockOutcome::InProgress);
-        };
-
-        Ok(self.clock_active(bus, active))
+                sequence,
+            }));
+            Ok(ClockOutcome::InProgress)
+        }
     }
 
     /// Executes through the end of one instruction. If an instruction was
@@ -869,6 +957,7 @@ impl Cpu {
             match self.clock(bus)? {
                 ClockOutcome::InProgress => {}
                 ClockOutcome::InstructionComplete(trace) => return Ok(trace),
+                ClockOutcome::InterruptComplete(_) | ClockOutcome::ResetComplete(_) => {}
                 ClockOutcome::UnsupportedOpcode { pc, opcode } => {
                     return Err(CpuError::UnsupportedOpcode { pc, opcode });
                 }
@@ -911,7 +1000,10 @@ impl Cpu {
             .total_cycles
             .checked_add(u64::from(cycles))
             .ok_or(CpuError::CycleOverflow)?;
-        self.finish_poll(before, instruction);
+        self.normalize_status();
+        if instruction.mnemonic != Mnemonic::Brk {
+            self.poll_interrupt_lines();
+        }
         Ok(StepTrace {
             before,
             after: self.state,
@@ -1009,12 +1101,15 @@ impl Cpu {
         active.cycles += 1;
         match progress {
             CycleProgress::Continue(sequence) => {
+                if self.sequence_completes_next_cycle(active.instruction, sequence) {
+                    self.poll_interrupt_lines();
+                }
                 active.sequence = sequence;
-                self.active = Some(active);
+                self.active = Some(ActiveOperation::Instruction(active));
                 ClockOutcome::InProgress
             }
             CycleProgress::Complete => {
-                self.finish_poll(active.before, active.instruction);
+                self.normalize_status();
                 ClockOutcome::InstructionComplete(StepTrace {
                     before: active.before,
                     after: self.state,
@@ -1026,16 +1121,165 @@ impl Cpu {
         }
     }
 
-    fn finish_poll(&mut self, before: CpuState, instruction: Instruction) {
-        self.normalize_status();
-        self.poll_interrupt_disable = if matches!(
-            instruction.mnemonic,
-            Mnemonic::Cli | Mnemonic::Sei | Mnemonic::Plp
-        ) {
-            before.status & FLAG_INTERRUPT_DISABLE != 0
+    fn poll_interrupt_lines(&mut self) {
+        self.polled_interrupt = if self.nmi_pending {
+            Some(Interrupt::Nmi)
+        } else if self.irq_level && self.state.status & FLAG_INTERRUPT_DISABLE == 0 {
+            Some(Interrupt::Irq)
         } else {
-            self.state.status & FLAG_INTERRUPT_DISABLE != 0
+            None
         };
+        self.poll_valid = true;
+    }
+
+    fn sequence_completes_next_cycle(
+        &self,
+        instruction: Instruction,
+        sequence: InstructionSequence,
+    ) -> bool {
+        match sequence {
+            InstructionSequence::Data(data) => {
+                matches!(
+                    data.stage,
+                    DataStage::Immediate | DataStage::WriteModified { .. }
+                ) || matches!(data.stage, DataStage::Access { .. }) && data.kind != DataKind::Modify
+            }
+            InstructionSequence::Implied => true,
+            InstructionSequence::Branch(BranchStage::Offset) => {
+                !self.branch_condition(instruction.mnemonic)
+            }
+            InstructionSequence::Branch(BranchStage::Taken { unfixed, .. }) => unfixed.is_none(),
+            InstructionSequence::Branch(BranchStage::PageDummy { .. }) => true,
+            InstructionSequence::Brk(_) => false,
+            InstructionSequence::Jump(JumpStage::AbsoluteHigh { .. })
+            | InstructionSequence::Jump(JumpStage::TargetHigh { .. })
+            | InstructionSequence::Jsr(JsrStage::TargetHigh { .. })
+            | InstructionSequence::Rti(RtiStage::PullHigh { .. })
+            | InstructionSequence::Rts(RtsStage::DummyReturn { .. })
+            | InstructionSequence::Push(PushStage::Value)
+            | InstructionSequence::Pull(PullStage::Value) => true,
+            InstructionSequence::Jump(_)
+            | InstructionSequence::Jsr(_)
+            | InstructionSequence::Rti(_)
+            | InstructionSequence::Rts(_)
+            | InstructionSequence::Push(_)
+            | InstructionSequence::Pull(_) => false,
+        }
+    }
+
+    fn vector_source(&mut self, origin: Interrupt) -> Interrupt {
+        let source = if origin == Interrupt::Nmi || self.nmi_pending {
+            Interrupt::Nmi
+        } else {
+            Interrupt::Irq
+        };
+        if source == Interrupt::Nmi {
+            self.nmi_pending = false;
+        }
+        source
+    }
+
+    fn clock_interrupt(&mut self, bus: &mut impl Bus, mut active: ActiveInterrupt) -> ClockOutcome {
+        let next = match active.stage {
+            InterruptStage::FirstPcRead => {
+                let _ = bus.read(self.state.pc);
+                Some(InterruptStage::SecondPcRead)
+            }
+            InterruptStage::SecondPcRead => {
+                let _ = bus.read(self.state.pc);
+                Some(InterruptStage::PushHigh)
+            }
+            InterruptStage::PushHigh => {
+                self.push_cycle(bus, self.state.pc.to_le_bytes()[1]);
+                Some(InterruptStage::PushLow)
+            }
+            InterruptStage::PushLow => {
+                self.push_cycle(bus, self.state.pc.to_le_bytes()[0]);
+                let source = self.vector_source(active.origin);
+                Some(InterruptStage::PushStatus { source })
+            }
+            InterruptStage::PushStatus { source } => {
+                self.push_cycle(bus, (self.state.status | FLAG_UNUSED) & !FLAG_BREAK);
+                self.set_flag(FLAG_INTERRUPT_DISABLE, true);
+                Some(InterruptStage::VectorLow { source })
+            }
+            InterruptStage::VectorLow { source } => {
+                let low = bus.read(source.vector());
+                Some(InterruptStage::VectorHigh { source, low })
+            }
+            InterruptStage::VectorHigh { source, low } => {
+                let high = bus.read(source.vector().wrapping_add(1));
+                self.state.pc = u16::from_le_bytes([low, high]);
+                self.state.total_cycles += 1;
+                active.cycles += 1;
+                self.normalize_status();
+                return ClockOutcome::InterruptComplete(InterruptEntry {
+                    origin: active.origin,
+                    kind: source,
+                    before: active.before,
+                    after: self.state,
+                    vector: source.vector(),
+                    cycles: active.cycles,
+                });
+            }
+        };
+
+        self.state.total_cycles += 1;
+        active.cycles += 1;
+        active.stage = next.expect("non-terminal interrupt stage has a successor");
+        self.active = Some(ActiveOperation::Interrupt(active));
+        ClockOutcome::InProgress
+    }
+
+    fn clock_reset(&mut self, bus: &mut impl Bus, mut active: ActiveReset) -> ClockOutcome {
+        let next = match active.stage {
+            ResetStage::FirstPcRead => {
+                let _ = bus.read(self.state.pc);
+                Some(ResetStage::SecondPcRead)
+            }
+            ResetStage::SecondPcRead => {
+                let _ = bus.read(self.state.pc);
+                Some(ResetStage::StackRead)
+            }
+            ResetStage::StackRead => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                self.state.sp = self.state.sp.wrapping_sub(1);
+                Some(ResetStage::StackReadOne)
+            }
+            ResetStage::StackReadOne => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                self.state.sp = self.state.sp.wrapping_sub(1);
+                Some(ResetStage::StackReadTwo)
+            }
+            ResetStage::StackReadTwo => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                self.state.sp = self.state.sp.wrapping_sub(1);
+                Some(ResetStage::VectorLow)
+            }
+            ResetStage::VectorLow => {
+                self.set_flag(FLAG_INTERRUPT_DISABLE, true);
+                let low = bus.read(RESET_VECTOR);
+                Some(ResetStage::VectorHigh { low })
+            }
+            ResetStage::VectorHigh { low } => {
+                let high = bus.read(RESET_VECTOR.wrapping_add(1));
+                self.state.pc = u16::from_le_bytes([low, high]);
+                self.state.total_cycles += 1;
+                active.cycles += 1;
+                self.normalize_status();
+                return ClockOutcome::ResetComplete(ResetEntry {
+                    before: active.before,
+                    after: self.state,
+                    cycles: active.cycles,
+                });
+            }
+        };
+
+        self.state.total_cycles += 1;
+        active.cycles += 1;
+        active.stage = next.expect("non-terminal reset stage has a successor");
+        self.active = Some(ActiveOperation::Reset(active));
+        ClockOutcome::InProgress
     }
 
     const fn continue_data(kind: DataKind, stage: DataStage) -> CycleProgress {
@@ -1410,19 +1654,23 @@ impl Cpu {
             }
             BrkStage::PushLow => {
                 self.push_cycle(bus, self.state.pc.to_le_bytes()[0]);
-                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::PushStatus))
+                let source = self.vector_source(Interrupt::Irq);
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::PushStatus { source }))
             }
-            BrkStage::PushStatus => {
+            BrkStage::PushStatus { source } => {
                 self.push_cycle(bus, self.state.status | FLAG_BREAK | FLAG_UNUSED);
                 self.set_flag(FLAG_INTERRUPT_DISABLE, true);
-                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::VectorLow))
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::VectorLow { source }))
             }
-            BrkStage::VectorLow => {
-                let low = bus.read(IRQ_VECTOR);
-                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::VectorHigh { low }))
+            BrkStage::VectorLow { source } => {
+                let low = bus.read(source.vector());
+                CycleProgress::Continue(InstructionSequence::Brk(BrkStage::VectorHigh {
+                    source,
+                    low,
+                }))
             }
-            BrkStage::VectorHigh { low } => {
-                let high = bus.read(IRQ_VECTOR.wrapping_add(1));
+            BrkStage::VectorHigh { source, low } => {
+                let high = bus.read(source.vector().wrapping_add(1));
                 self.state.pc = u16::from_le_bytes([low, high]);
                 CycleProgress::Complete
             }
@@ -2066,6 +2314,7 @@ impl Cpu {
         1 + u8::from(crossed)
     }
 
+    #[cfg(test)]
     fn push(&mut self, bus: &mut impl Bus, value: u8) {
         bus.write(0x0100 | u16::from(self.state.sp), value);
         self.state.sp = self.state.sp.wrapping_sub(1);
@@ -2077,6 +2326,7 @@ impl Cpu {
         bus.read(0x0100 | u16::from(self.state.sp))
     }
 
+    #[cfg(test)]
     fn push_u16(&mut self, bus: &mut impl Bus, value: u16) {
         let [low, high] = value.to_le_bytes();
         self.push(bus, high);
@@ -2369,6 +2619,9 @@ mod tests {
                     ClockOutcome::InstructionComplete(trace) => break trace,
                     ClockOutcome::UnsupportedOpcode { .. } => {
                         panic!("decoded opcode ${opcode:02X} became unsupported")
+                    }
+                    ClockOutcome::InterruptComplete(_) | ClockOutcome::ResetComplete(_) => {
+                        panic!("decoded opcode ${opcode:02X} changed operation kind")
                     }
                 }
             };
@@ -2942,6 +3195,346 @@ mod tests {
     }
 
     #[test]
+    fn live_irq_entry_matches_the_external_transistor_bus_trace() {
+        let mut ram = RecordingRam {
+            data: vec![0xea; 65_536],
+            trace: Vec::new(),
+        };
+        ram.data[0xfffe] = 0x00;
+        ram.data[0xffff] = 0x90;
+        let mut state = CpuState::at(0x8005);
+        state.sp = 0xfd;
+        state.status = FLAG_NEGATIVE | FLAG_UNUSED;
+        let mut cpu = Cpu::new(state);
+        cpu.begin_interrupt(Interrupt::Irq)
+            .expect("IRQ entry has cycle headroom");
+
+        let entry = loop {
+            let accesses = ram.trace.len();
+            let outcome = cpu.clock(&mut ram).expect("IRQ cycle succeeds");
+            assert_eq!(ram.trace.len(), accesses + 1);
+            match outcome {
+                ClockOutcome::InProgress => {}
+                ClockOutcome::InterruptComplete(entry) => break entry,
+                _ => panic!("IRQ operation changed kind"),
+            }
+        };
+
+        assert_eq!(
+            ram.trace,
+            vec![
+                (0x8005, 0xea, CycleKind::Read),
+                (0x8005, 0xea, CycleKind::Read),
+                (0x01fd, 0x80, CycleKind::Write),
+                (0x01fc, 0x05, CycleKind::Write),
+                (0x01fb, 0xa0, CycleKind::Write),
+                (0xfffe, 0x00, CycleKind::Read),
+                (0xffff, 0x90, CycleKind::Read),
+            ]
+        );
+        assert_eq!(entry.origin, Interrupt::Irq);
+        assert_eq!(entry.kind, Interrupt::Irq);
+        assert_eq!(entry.vector, IRQ_VECTOR);
+        assert_eq!(entry.cycles, 7);
+        assert_eq!(entry.after.pc, 0x9000);
+        assert_eq!(entry.after.sp, 0xfa);
+    }
+
+    #[test]
+    fn live_nmi_entry_matches_the_external_transistor_bus_trace() {
+        let mut ram = RecordingRam {
+            data: vec![0xea; 65_536],
+            trace: Vec::new(),
+        };
+        ram.data[0xfffa] = 0x00;
+        ram.data[0xfffb] = 0xa0;
+        let mut state = CpuState::at(0x8005);
+        state.sp = 0xfd;
+        state.status = FLAG_NEGATIVE | FLAG_UNUSED;
+        let mut cpu = Cpu::new(state);
+        cpu.begin_interrupt(Interrupt::Nmi)
+            .expect("NMI entry has cycle headroom");
+
+        let entry = loop {
+            let accesses = ram.trace.len();
+            let outcome = cpu.clock(&mut ram).expect("NMI cycle succeeds");
+            assert_eq!(ram.trace.len(), accesses + 1);
+            match outcome {
+                ClockOutcome::InProgress => {}
+                ClockOutcome::InterruptComplete(entry) => break entry,
+                _ => panic!("NMI operation changed kind"),
+            }
+        };
+
+        assert_eq!(
+            ram.trace,
+            vec![
+                (0x8005, 0xea, CycleKind::Read),
+                (0x8005, 0xea, CycleKind::Read),
+                (0x01fd, 0x80, CycleKind::Write),
+                (0x01fc, 0x05, CycleKind::Write),
+                (0x01fb, 0xa0, CycleKind::Write),
+                (0xfffa, 0x00, CycleKind::Read),
+                (0xfffb, 0xa0, CycleKind::Read),
+            ]
+        );
+        assert_eq!(entry.origin, Interrupt::Nmi);
+        assert_eq!(entry.kind, Interrupt::Nmi);
+        assert_eq!(entry.vector, NMI_VECTOR);
+        assert_eq!(entry.cycles, 7);
+        assert_eq!(entry.after.pc, 0xa000);
+        assert_eq!(entry.after.sp, 0xfa);
+    }
+
+    #[test]
+    fn live_reset_matches_the_external_transistor_bus_trace() {
+        let mut ram = RecordingRam {
+            data: vec![0xea; 65_536],
+            trace: Vec::new(),
+        };
+        ram.data[0xfffc] = 0x00;
+        ram.data[0xfffd] = 0x80;
+        let mut state = CpuState::at(0x8005);
+        state.sp = 0xfd;
+        state.status = FLAG_NEGATIVE | FLAG_UNUSED;
+        let mut cpu = Cpu::new(state);
+        cpu.begin_reset().expect("reset has cycle headroom");
+
+        let entry = loop {
+            let accesses = ram.trace.len();
+            let outcome = cpu.clock(&mut ram).expect("reset cycle succeeds");
+            assert_eq!(ram.trace.len(), accesses + 1);
+            match outcome {
+                ClockOutcome::InProgress => {}
+                ClockOutcome::ResetComplete(entry) => break entry,
+                _ => panic!("reset operation changed kind"),
+            }
+        };
+
+        assert_eq!(
+            ram.trace,
+            vec![
+                (0x8005, 0xea, CycleKind::Read),
+                (0x8005, 0xea, CycleKind::Read),
+                (0x01fd, 0xea, CycleKind::Read),
+                (0x01fc, 0xea, CycleKind::Read),
+                (0x01fb, 0xea, CycleKind::Read),
+                (0xfffc, 0x00, CycleKind::Read),
+                (0xfffd, 0x80, CycleKind::Read),
+            ]
+        );
+        assert_eq!(entry.cycles, 7);
+        assert_eq!(entry.after.pc, 0x8000);
+        assert_eq!(entry.after.sp, 0xfa);
+        assert_ne!(entry.after.status & FLAG_INTERRUPT_DISABLE, 0);
+    }
+
+    #[test]
+    fn interrupt_poll_accepts_before_but_not_after_the_penultimate_cycle() {
+        let mut on_time_ram = Ram::new();
+        on_time_ram.data[0x8000] = 0xea;
+        let mut on_time = cpu_with_irq_enabled(0x8000);
+        on_time.set_irq_line(true);
+        assert_eq!(
+            on_time.clock(&mut on_time_ram),
+            Ok(ClockOutcome::InProgress)
+        );
+        on_time.set_irq_line(false);
+        assert!(matches!(
+            on_time.clock(&mut on_time_ram),
+            Ok(ClockOutcome::InstructionComplete(_))
+        ));
+        assert_eq!(on_time.pending_interrupt(), Some(Interrupt::Irq));
+
+        let mut late_ram = Ram::new();
+        late_ram.data[0x8000..0x8002].copy_from_slice(&[0xea, 0xea]);
+        let mut late = cpu_with_irq_enabled(0x8000);
+        assert_eq!(late.clock(&mut late_ram), Ok(ClockOutcome::InProgress));
+        late.set_irq_line(true);
+        assert!(matches!(
+            late.clock(&mut late_ram),
+            Ok(ClockOutcome::InstructionComplete(_))
+        ));
+        assert_eq!(late.pending_interrupt(), None);
+        assert_eq!(late.clock(&mut late_ram), Ok(ClockOutcome::InProgress));
+        assert_eq!(late.state().pc, 0x8002);
+    }
+
+    #[test]
+    fn variable_branch_paths_poll_before_their_final_cycle() {
+        // Not taken: opcode fetch is penultimate.
+        let mut not_taken_ram = Ram::new();
+        not_taken_ram.data[0x8000..0x8002].copy_from_slice(&[0xf0, 0x00]);
+        let mut not_taken = cpu_with_irq_enabled(0x8000);
+        not_taken.set_irq_line(true);
+        not_taken.clock(&mut not_taken_ram).expect("branch fetch");
+        not_taken.set_irq_line(false);
+        not_taken.clock(&mut not_taken_ram).expect("branch offset");
+        assert_eq!(not_taken.pending_interrupt(), Some(Interrupt::Irq));
+
+        let mut not_taken_late_ram = Ram::new();
+        not_taken_late_ram.data[0x8000..0x8003].copy_from_slice(&[0xf0, 0x00, 0xea]);
+        let mut not_taken_late = cpu_with_irq_enabled(0x8000);
+        not_taken_late
+            .clock(&mut not_taken_late_ram)
+            .expect("late branch fetch");
+        not_taken_late.set_irq_line(true);
+        not_taken_late
+            .clock(&mut not_taken_late_ram)
+            .expect("late branch offset");
+        assert_eq!(not_taken_late.pending_interrupt(), None);
+        not_taken_late
+            .clock(&mut not_taken_late_ram)
+            .expect("late IRQ waits for following opcode");
+        assert_eq!(not_taken_late.state().pc, 0x8003);
+
+        // Taken, same page: offset read is penultimate.
+        let mut taken_ram = Ram::new();
+        taken_ram.data[0x8000..0x8002].copy_from_slice(&[0xd0, 0x00]);
+        let mut taken = cpu_with_irq_enabled(0x8000);
+        taken.clock(&mut taken_ram).expect("branch fetch");
+        taken.set_irq_line(true);
+        taken.clock(&mut taken_ram).expect("branch offset");
+        taken.set_irq_line(false);
+        taken.clock(&mut taken_ram).expect("taken dummy");
+        assert_eq!(taken.pending_interrupt(), Some(Interrupt::Irq));
+
+        let mut taken_late_ram = Ram::new();
+        taken_late_ram.data[0x8000..0x8003].copy_from_slice(&[0xd0, 0x00, 0xea]);
+        let mut taken_late = cpu_with_irq_enabled(0x8000);
+        taken_late
+            .clock(&mut taken_late_ram)
+            .expect("late taken fetch");
+        taken_late
+            .clock(&mut taken_late_ram)
+            .expect("late taken offset");
+        taken_late.set_irq_line(true);
+        taken_late
+            .clock(&mut taken_late_ram)
+            .expect("late taken dummy");
+        assert_eq!(taken_late.pending_interrupt(), None);
+        taken_late
+            .clock(&mut taken_late_ram)
+            .expect("late taken IRQ waits for following opcode");
+        assert_eq!(taken_late.state().pc, 0x8003);
+
+        // Taken across a page: taken-address dummy is penultimate.
+        let mut crossed_ram = Ram::new();
+        crossed_ram.data[0x8000..0x8002].copy_from_slice(&[0xd0, 0xfd]);
+        let mut crossed = cpu_with_irq_enabled(0x8000);
+        crossed.clock(&mut crossed_ram).expect("branch fetch");
+        crossed.clock(&mut crossed_ram).expect("branch offset");
+        crossed.set_irq_line(true);
+        crossed.clock(&mut crossed_ram).expect("taken dummy");
+        crossed.set_irq_line(false);
+        crossed.clock(&mut crossed_ram).expect("page dummy");
+        assert_eq!(crossed.pending_interrupt(), Some(Interrupt::Irq));
+
+        let mut crossed_late_ram = Ram::new();
+        crossed_late_ram.data[0x8000..0x8002].copy_from_slice(&[0xd0, 0xfd]);
+        crossed_late_ram.data[0x7fff] = 0xea;
+        let mut crossed_late = cpu_with_irq_enabled(0x8000);
+        crossed_late
+            .clock(&mut crossed_late_ram)
+            .expect("late crossed fetch");
+        crossed_late
+            .clock(&mut crossed_late_ram)
+            .expect("late crossed offset");
+        crossed_late
+            .clock(&mut crossed_late_ram)
+            .expect("late crossed taken dummy");
+        crossed_late.set_irq_line(true);
+        crossed_late
+            .clock(&mut crossed_late_ram)
+            .expect("late crossed page dummy");
+        assert_eq!(crossed_late.pending_interrupt(), None);
+        crossed_late
+            .clock(&mut crossed_late_ram)
+            .expect("late crossed IRQ waits for following opcode");
+        assert_eq!(crossed_late.state().pc, 0x8000);
+    }
+
+    #[test]
+    fn nmi_hijacks_brk_and_irq_only_before_vector_lock() {
+        let mut brk_ram = RecordingRam {
+            data: vec![0xea; 65_536],
+            trace: Vec::new(),
+        };
+        brk_ram.data[0x8006] = 0x00;
+        brk_ram.data[0xfffa] = 0x00;
+        brk_ram.data[0xfffb] = 0xa0;
+        brk_ram.data[0xfffe] = 0x00;
+        brk_ram.data[0xffff] = 0x90;
+        let mut state = CpuState::at(0x8006);
+        state.sp = 0xfd;
+        state.status = FLAG_NEGATIVE | FLAG_UNUSED;
+        let mut brk = Cpu::new(state);
+        for _ in 0..3 {
+            brk.clock(&mut brk_ram).expect("BRK pre-lock cycle");
+        }
+        brk.set_nmi_line(true);
+        brk.clock(&mut brk_ram).expect("BRK low-PC lock cycle");
+        let trace = brk.step(&mut brk_ram).expect("hijacked BRK completes");
+        assert_eq!(trace.after.pc, 0xa000);
+        assert_ne!(brk_ram.data[0x01fb] & FLAG_BREAK, 0);
+        assert_eq!(
+            &brk_ram.trace[5..7],
+            &[
+                (0xfffa, 0x00, CycleKind::Read),
+                (0xfffb, 0xa0, CycleKind::Read)
+            ]
+        );
+
+        let mut irq_ram = RecordingRam {
+            data: vec![0xea; 65_536],
+            trace: Vec::new(),
+        };
+        irq_ram.data[0xfffa] = 0x00;
+        irq_ram.data[0xfffb] = 0xa0;
+        irq_ram.data[0xfffe] = 0x00;
+        irq_ram.data[0xffff] = 0x90;
+        let mut irq = Cpu::new(state);
+        irq.begin_interrupt(Interrupt::Irq).expect("IRQ begins");
+        for _ in 0..3 {
+            irq.clock(&mut irq_ram).expect("IRQ pre-lock cycle");
+        }
+        irq.set_nmi_line(true);
+        irq.clock(&mut irq_ram).expect("IRQ low-PC lock cycle");
+        let entry = loop {
+            match irq.clock(&mut irq_ram).expect("hijacked IRQ cycle") {
+                ClockOutcome::InterruptComplete(entry) => break entry,
+                ClockOutcome::InProgress => {}
+                _ => panic!("IRQ operation changed kind"),
+            }
+        };
+        assert_eq!(entry.origin, Interrupt::Irq);
+        assert_eq!(entry.kind, Interrupt::Nmi);
+        assert_eq!(entry.vector, NMI_VECTOR);
+        assert_eq!(entry.after.pc, 0xa000);
+        assert_eq!(irq_ram.data[0x01fb] & FLAG_BREAK, 0);
+
+        let mut late_ram = irq_ram;
+        late_ram.trace.clear();
+        let mut late = Cpu::new(state);
+        late.begin_interrupt(Interrupt::Irq)
+            .expect("late IRQ begins");
+        for _ in 0..4 {
+            late.clock(&mut late_ram).expect("IRQ reaches vector lock");
+        }
+        late.set_nmi_line(true);
+        let late_entry = loop {
+            match late.clock(&mut late_ram).expect("late NMI cycle") {
+                ClockOutcome::InterruptComplete(entry) => break entry,
+                ClockOutcome::InProgress => {}
+                _ => panic!("late IRQ operation changed kind"),
+            }
+        };
+        assert_eq!(late_entry.kind, Interrupt::Irq);
+        assert_eq!(late_entry.after.pc, 0x9000);
+        assert_eq!(late.pending_interrupt(), Some(Interrupt::Nmi));
+    }
+
+    #[test]
     fn irq_is_masked_while_interrupt_disable_is_set() {
         let mut cpu = Cpu::new(CpuState::at(0x8000));
         assert_ne!(cpu.state().status & FLAG_INTERRUPT_DISABLE, 0);
@@ -3168,6 +3761,63 @@ mod tests {
         );
         assert_eq!(cpu.state(), before);
         assert_eq!(ram.data, before_ram);
+    }
+
+    #[test]
+    fn automatically_accepted_interrupt_preserves_its_poll_when_headroom_is_exhausted() {
+        let mut ram = RecordingRam {
+            data: vec![0xea; 65_536],
+            trace: Vec::new(),
+        };
+        let mut state = CpuState::at(0x8000);
+        state.status = FLAG_UNUSED;
+        state.total_cycles = u64::MAX - u64::from(MAX_INSTRUCTION_CYCLES);
+        let mut cpu = Cpu::new(state);
+        cpu.set_irq_line(true);
+
+        cpu.clock(&mut ram)
+            .expect("NOP fetch has reserved headroom");
+        cpu.clock(&mut ram)
+            .expect("NOP completion has reserved headroom");
+        let before_cpu = cpu.clone();
+        let before_trace = ram.trace.clone();
+
+        assert_eq!(
+            cpu.clock(&mut ram),
+            Err(CpuError::CycleCounterHeadroomExhausted { remaining: 6 })
+        );
+        assert_eq!(cpu, before_cpu);
+        assert_eq!(cpu.pending_interrupt(), Some(Interrupt::Irq));
+        assert_eq!(ram.trace, before_trace);
+    }
+
+    #[test]
+    fn late_interrupt_cannot_replace_an_empty_poll_when_headroom_is_exhausted() {
+        let mut ram = RecordingRam {
+            data: vec![0xea; 65_536],
+            trace: Vec::new(),
+        };
+        let mut state = CpuState::at(0x8000);
+        state.status = FLAG_UNUSED;
+        state.total_cycles = u64::MAX - u64::from(MAX_INSTRUCTION_CYCLES);
+        let mut cpu = Cpu::new(state);
+
+        cpu.clock(&mut ram)
+            .expect("NOP fetch has reserved headroom");
+        cpu.clock(&mut ram)
+            .expect("NOP completion has reserved headroom");
+        assert_eq!(cpu.pending_interrupt(), None);
+        cpu.set_irq_line(true);
+        let before_cpu = cpu.clone();
+        let before_trace = ram.trace.clone();
+
+        assert_eq!(
+            cpu.clock(&mut ram),
+            Err(CpuError::CycleCounterHeadroomExhausted { remaining: 6 })
+        );
+        assert_eq!(cpu, before_cpu);
+        assert_eq!(cpu.pending_interrupt(), None);
+        assert_eq!(ram.trace, before_trace);
     }
 
     #[test]
