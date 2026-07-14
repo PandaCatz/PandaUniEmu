@@ -31,7 +31,8 @@ frontend, or playable emulation.
 
 ## Implemented this session
 
-Live CPU-cycle and machine-clock checkpoint (2026-07-14, publication pending):
+Live CPU-cycle and machine-clock checkpoint (2026-07-14, published in
+`2637b71c7501f0108e1dc1e25a95aadf4fe26eef`):
 
 - Refactored production instruction execution into a resumable typed cycle state
   machine. `Cpu::clock` performs exactly one live bus access and advances one
@@ -65,6 +66,10 @@ Live CPU-cycle and machine-clock checkpoint (2026-07-14, publication pending):
   `09fc542877a84318291aa42dab143a3e2c3db974` and archive SHA-256
   `594553a873d66a13e88c134495c9f55e064a36ba4670b07fba71f5047a77bdf5`.
   No upstream source or result is committed, and no current claim relies on it.
+- Published the reviewed 58-file snapshot to `PandaCatz/PandaUniEmu@main` as
+  `2637b71c7501f0108e1dc1e25a95aadf4fe26eef`. The deletion-safe preview found
+  no missing managed files, validated every allowlisted file through its
+  in-root handle, and preserved the parent tree and non-allowlisted remote files.
 
 NES guidance intake and first NTSC timing checkpoint (2026-07-14, published in
 `04ae6d017e38296fc82dc1b2ebf1eb06d8eb6b63`):

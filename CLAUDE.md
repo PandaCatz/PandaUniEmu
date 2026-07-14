@@ -219,6 +219,10 @@ treat its code/claims as an oracle.
   and asserted VBlank delivery call count, CPU cycles, master ticks, and PPU
   position. The lack of an independent ordered-bus oracle for the 76 stable
   undocumented encodings remains documented, not promoted to a verified claim.
+- Published the verified 58-file live CPU-cycle/machine-clock checkpoint as
+  commit `2637b71c7501f0108e1dc1e25a95aadf4fe26eef` to
+  `PandaCatz/PandaUniEmu@main`. The final deletion-safe preview found no missing
+  managed files and preserved the parent tree and all non-allowlisted files.
 - Fresh technical and claims reviews found three bounded issues: missing
   `FrameOverflow` atomicity coverage, wording that accidentally extended the
   190 documented-vector bus oracle to undocumented opcodes, and publication of
