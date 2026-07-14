@@ -42,8 +42,9 @@ The workspace contains seven functional crates:
 - `retro-core`: shared deterministic contracts and typed output/input metadata.
 - `format-ines`: defensive borrowed parser for iNES and NES 2.0 images.
 - `format-nestest-log`: bounded hostile-byte parser for reference CPU trace rows.
-- `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, and a
-  minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults.
+- `core-nes`: parsed-cartridge ownership boundary, mapper-0 validation, a
+  minimal CPU bus with RAM/PRG mirroring and explicit unsupported-I/O faults,
+  plus the first exact NTSC master-clock/PPU-dot timing layer.
 - `retro-testkit`: deterministic synthetic core, capture hashes, generated
   mapper-0 trace comparison, the `nestest` CPU-only I/O policy selected by the
   strict CLI after fixture identity verification, and pinned clean-room
@@ -54,18 +55,26 @@ The workspace contains seven functional crates:
 - `cpu-6502`: trace-first 2A03 instruction layer with all 151 documented and the
   76 stable undocumented encodings exercised by `nestest`, explicit addressing,
   flags, cycle totals, stack/control flow, decode metadata, a pinned MIT
-  documented-opcode single-step oracle sample, and instruction-granular
-  interrupt/reset handling (edge-triggered NMI, level-triggered IRQ, the
-  one-instruction `I`-flag delay, and the seven-cycle interrupt/reset sequences).
+  documented-opcode single-step oracle sample, strict ordered bus traces for all
+  190 sampled vectors, and instruction-granular interrupt/reset handling
+  (edge-triggered NMI, level-triggered IRQ, the one-instruction `I`-flag delay,
+  and the seven-cycle interrupt/reset sequences).
 
 The fuzz project calls both format parsers with arbitrary bytes. The checked-in
 launcher generates redistribution-safe seeds and handles the Windows
 AddressSanitizer runtime path.
 
 Not implemented: `retro-frontend`, a complete NES machine, PPU/APU/I/O bus
-devices, per-bus-cycle CPU sequencing (including per-cycle interrupt/reset bus
-order and NMI hijacking), DMA, scheduler, input hardware, SRAM persistence, save
-states, rewind, or any GBA/Genesis/SNES code.
+devices, cycle-stepped CPU execution (including per-cycle hardware
+interrupt/reset entry and NMI hijacking), DMA, input hardware, SRAM persistence,
+save states, rewind, or any GBA/Genesis/SNES code. A timing scheduler exists, but
+it is not yet connected to a machine or device bus.
+
+The operator's 31-file NES instruction folder is located at
+`%USERPROFILE%\Desktop\panda video\nes`. It was ingested into
+`docs/NES_REFERENCE_INTAKE.md` as an external, unattributed AI-generated
+scaffold. Use it only as a subsystem checklist; do not publish its originals or
+treat its code/claims as an oracle.
 
 ## Completed work
 
@@ -153,7 +162,43 @@ states, rewind, or any GBA/Genesis/SNES code.
   before any bus access. Added 14 focused tests and left per-cycle interrupt/reset
   bus order, dummy reads/writes, RMW double-writes, sub-instruction poll timing,
   and NMI hijacking explicitly deferred. A four-lens adversarial review found no
-  real P0-P2 defect.
+  real P0-P2 defect. Shipped as commit `e6b32c9a2e7e65367f11075a72ea5936727e3f27`;
+  GitHub Actions CI passed all six Windows/Ubuntu jobs.
+- Completed per-cycle instruction bus accuracy (unpushed as of 2026-07-14).
+  Extended the
+  SingleStepTests curator to emit each vector's ordered per-cycle bus trace
+  (`bus_cycles` + a `CycleKind` enum) and regenerated `singlestep_vectors.rs`
+  deterministically offline (new SHA-256
+  `a53a81800b37bbfb5f5101785974bbed9070c103a09d206988101a79969922fa`). Added a
+  `RecordingRam` bus and a coverage checkpoint comparing the CPU's per-cycle bus
+  trace to the oracle (measured baseline 74/190). Implemented all remaining
+  classes:
+  two-cycle implied/accumulator instructions now perform the dummy read of the
+  byte after the opcode (74->96), and read-modify-write instructions write the
+  original value back before the modified value so zero-page and absolute RMW
+  modes match (96->108); indexed-addressing dummy reads bring the checkpoint to
+  166; and stack, control-flow, branch, and BRK sequences bring it to 190. The
+  temporary threshold is gone: a strict test now requires every sampled ordered
+  bus trace to match. The final-state, clean-room, and strict `nestest-v1` state
+  oracles remained unregressed after each increment.
+- Inventoried the operator's 31-file NES instruction folder and added the safe
+  project-owned intake at `docs/NES_REFERENCE_INTAKE.md`. No source note was
+  copied because the folder has no author/license metadata and contains
+  simplified or unsafe scaffolds.
+- Added the first exact NTSC timing checkpoint in `core-nes`: rational master
+  clock 236.25 MHz / 11, 12 master ticks per CPU cycle, 4 per PPU dot, 341 dots
+  per scanline, 262 scanlines per frame, VBlank edges at 241/1 and 261/1, and
+  the rendering-dependent odd-frame jump from 261/339 to 0/0. Checked counters
+  are failure-atomic. Six focused timing tests pass. This is a timing layer, not
+  a PPU implementation or a cycle-stepped machine.
+- Fresh technical and claims reviews found three bounded issues: missing
+  `FrameOverflow` atomicity coverage, wording that accidentally extended the
+  190 documented-vector bus oracle to undocumented opcodes, and publication of
+  an absolute operator path. Added the missing test, narrowed the claim and
+  explicitly left undocumented bus order open, and replaced the path with the
+  non-identifying `%USERPROFILE%` form. The provenance ledger was also brought
+  forward to the sanitized July 14 strict run. Fresh fix-only re-review found no
+  remaining P0-P2 issue.
 
 ## Required commands
 
@@ -179,17 +224,24 @@ are preserved by default; deletion requires the explicit
 
 ## Latest verified results
 
-Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
+Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-14:
 
 - Format check passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 90 passed, 0 failed (14 new interrupt/reset tests in `cpu-6502`).
-- Release tests: 90 passed, 0 failed; doc tests passed.
-- After the interrupt work, the strict `nestest-v1` full trace was re-run and is
-  byte-for-byte unregressed (8,991 rows / 8,990 transitions, final `PC=C66E`,
-  `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`, 26,554 cycles). A four-lens
-  adversarial review of the interrupt model found no real P0-P2 defect.
+- Debug tests: 97 passed, 0 failed.
+- Release tests: 97 passed, 0 failed; doc tests passed.
+- All six new NTSC timing tests passed: exact 3:1 CPU/PPU progression, VBlank
+  edges and master timestamp, 89,342/89,341-dot frame alternation, no shortened
+  frame while rendering is disabled, and failure-atomic overflow.
+- The vectors regenerate deterministically offline to SHA-256
+  `a53a81800b37bbfb5f5101785974bbed9070c103a09d206988101a79969922fa`.
+- Every one of the 190 pinned ordered instruction bus traces matches exactly;
+  the final-state oracle passes too.
+- The clean-room verifier downloaded the pinned py65 source/license, reproduced
+  all three cases at generated SHA-256
+  `02f88830b4af0d46b3ba542a713c4fddd94f6c9af4f9b49e69d92bc03a3bfab5`, and
+  passed its six Python tests.
 - Windows AddressSanitizer fuzz smoke: 10,000 executions per parser completed
   with no crash.
   cargo-fuzz is pinned at 0.13.2; CI pins nightly-2026-07-12, while the local
@@ -287,13 +339,17 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 
 ## Next tasks, in order
 
-1. Done: architectural IRQ/NMI/reset sampling and entry with focused tests.
-   Remaining CPU gate: convert the instruction-stepped core to per-cycle bus
-   behavior (exact per-cycle access order, dummy reads/writes, RMW double-writes,
-   sub-instruction interrupt-poll timing, and NMI hijacking of an in-progress
-   BRK/IRQ sequence), validated against the SingleStepTests per-cycle bus traces.
-2. Add the first master-clock scheduler and dot-timed PPU oracle.
-3. Reach a deterministic headless NROM video/audio checkpoint.
+1. In progress: turn the exact instruction bus trace into a cycle-stepped CPU
+   driver interface. Preserve the existing whole-instruction `step` wrapper and
+   strict 190-vector bus/state gates while allowing the machine scheduler to
+   observe and advance after each read/write cycle. Then verify hardware
+   interrupt/reset bus entry, sub-instruction polling, and NMI hijacking with an
+   independently licensed oracle.
+2. Add the machine-owned PPU register/address-space shell, route mirrored
+   `$2000-$3FFF` CPU accesses, and connect the verified VBlank timeline to the
+   CPU NMI line. Continue with fetch, scroll, sprite, and rendering oracles.
+3. Add DMA/APU/input and reach a deterministic headless NROM video/audio
+   checkpoint.
 4. Add a tested MMC1 implementation, including serial writes, PRG/CHR banking,
    mirroring, reset, and PRG RAM, for the supplied mapper-1 target.
 5. Only then resolve and spike `winit`/`wgpu`/`cpal` for `retro-frontend`.
@@ -323,8 +379,11 @@ Verified on Windows x86-64 with Rust/Cargo 1.96.0 on 2026-07-13:
 The synthetic core proves only the shared contract/headless capture path. The
 CPU now has independent instruction-boundary samples across all documented
 encodings and passes the full mapper-0 `nestest` architectural trace, including
-its 76 stable undocumented encodings. The sample is not exhaustive and the CPU
-is not bus-cycle accurate. Reset execution, interrupts, bus order, DMA,
-PPU/APU, and gameplay remain unchecked. PPU/APU/I/O are intentionally faulted
-rather than simulated outside the strict CLI's reviewed trace-write allowlist.
-Mapper 1 is not implemented. This is not a playable NES emulator.
+its 76 stable undocumented encodings. All 190 sampled ordered instruction bus
+traces match, but the sample is not exhaustive, execution cannot yield between
+cycles, and hardware interrupt/reset entry bus order, sub-instruction polling,
+and NMI hijacking remain unchecked. The NTSC scheduler proves clock ratios,
+frame geometry, VBlank edges, and the odd-frame skip only; it is not connected
+to PPU registers or rendering. DMA, APU, input, gameplay, and mapper 1 remain
+unimplemented. PPU/APU/I/O are intentionally faulted outside the strict CLI's
+reviewed trace-write allowlist. This is not a playable NES emulator.

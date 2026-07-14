@@ -12,11 +12,12 @@ Genesis / Mega Drive, and SNES cores.
 
 > [!IMPORTANT]
 > PandaUniEmu is a research-stage, headless emulator foundation. The NES CPU
-> and mapper-0 trace checkpoints are real and verified, but PPU, APU, input
-> hardware, complete-machine scheduling, and the graphical frontend are not yet
-> implemented. CPU verification is architectural and instruction-boundary
-> based; it is not bus-cycle accurate. The project does not currently play
-> games.
+> and mapper-0 trace checkpoints are real and verified, and a first NTSC
+> master-clock/PPU-dot timing model exists. PPU registers and rendering, APU,
+> input hardware, a complete machine, and the graphical frontend are not yet
+> implemented. All 190 sampled instruction bus traces match, but execution still
+> cannot yield mid-instruction and hardware interrupt/reset entry is not
+> bus-cycle verified. The project does not currently play games.
 
 ## Current status
 
@@ -27,16 +28,18 @@ Genesis / Mega Drive, and SNES cores.
 | NES 2A03 CPU architecture | Verified checkpoint | All 151 documented encodings pass a pinned 190-vector MIT oracle sample |
 | Stable undocumented CPU encodings | Verified checkpoint | The exact 76 encodings exercised by `nestest` pass |
 | Independent full CPU trace | Passed | 8,991 rows / 8,990 transitions, final `PC=C66E`, 26,554 cycles |
+| CPU instruction bus order | Verified sample | All 190 pinned vectors match ordered reads/writes byte for byte; execution remains instruction-stepped |
+| IRQ, NMI, and reset | Architectural checkpoint | Edge/level sampling, `I`-flag delay, frames, vectors, and seven-cycle totals are tested; hardware entry bus order remains open |
 | Mapper 0 CPU integration | Verified checkpoint | NROM-128, NROM-256, PRG RAM, trainer preload, and clean-room traces |
-| Quality gates | Passing | 76 debug tests, 76 release tests, doc tests, warnings-denied Clippy, and parser fuzzing |
-| PPU, APU, input, DMA, interrupts | Not implemented | Next active NES milestones |
+| NTSC timing foundation | Verified checkpoint | Exact 12:4 master-clock divisors, VBlank edges, 341×262 geometry, and rendering-dependent odd-frame shortening |
+| Quality gates | Passing | Workspace debug/release tests, doc tests, warnings-denied Clippy, clean-room checks, strict `nestest`, and parser fuzzing |
+| PPU registers/rendering, APU, input, DMA | Not implemented | Next active NES milestones |
 | Native frontend | Not implemented | Intentionally deferred until the headless NES core is verified |
 | GBA, Genesis / Mega Drive, SNES | Planned | No implementation claims yet |
 
-The latest verified implementation checkpoint is
-[`7f1e20f`](https://github.com/PandaCatz/PandaUniEmu/commit/7f1e20f07a93c432fb0639ea8630474c4e9e26b7).
-Its six-job Windows/Ubuntu CI matrix passed tests, clean-room regeneration, and
-both 10,000-run parser fuzz jobs.
+Published checkpoints and their Windows/Ubuntu CI evidence are available in the
+[commit history](https://github.com/PandaCatz/PandaUniEmu/commits/main/) and
+[Actions](https://github.com/PandaCatz/PandaUniEmu/actions).
 
 ## Why this project is different
 
@@ -65,8 +68,13 @@ both 10,000-run parser fuzz jobs.
   clean-room NROM integration traces.
 - [x] Pass the identity-checked `nestest` V1.00 architectural trace,
   including its 76 stable undocumented encodings.
-- [ ] Add reset, IRQ, NMI, and per-cycle bus-access-order behavior and tests.
-- [ ] Add the NES master-clock scheduler and a dot-timed PPU oracle.
+- [x] Add architectural reset/IRQ/NMI behavior and match all 190 sampled
+  instruction bus-access traces.
+- [x] Add the first exact NTSC master-clock scheduler and PPU-dot timing oracle.
+- [ ] Make CPU execution cycle-steppable and verify hardware interrupt/reset
+  entry bus order, sub-instruction polling, and NMI hijacking.
+- [ ] Add PPU registers, address-space mapping, fetches, and rendering on the
+  verified dot timeline.
 - [ ] Add APU, controller input, DMA interactions, and deterministic replay.
 - [ ] Reach a deterministic headless NROM video/audio checkpoint.
 - [ ] Add a tested MMC1 implementation for the operator-owned compatibility

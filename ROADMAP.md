@@ -10,10 +10,12 @@ before parsing. The reviewed `nestest` pair passes 8,991 rows / 8,990
 transitions, including its 76 stable undocumented encodings. Project-owned NROM-128/NROM-256 diagnostics, including a
 trainer-bearing case, pass pinned py65 architectural traces through the real
 mapper and CLI. Architectural interrupt sampling and reset (edge NMI, level IRQ,
-the `I`-flag delay, and the seven-cycle sequences) are implemented; per-cycle bus
-order is the next CPU gate. The host frontend
-intentionally follows the verified headless NES path. See `CLAUDE.md` for
-evidence and exact next tasks.
+the `I`-flag delay, and the seven-cycle sequences) are implemented. All 190
+pinned instruction bus traces match, and the first exact NTSC master-clock and
+PPU-dot timing checkpoint covers VBlank edges and the odd-frame skipped dot.
+Cycle-stepped CPU/device interleaving and PPU registers/rendering are next. The
+host frontend intentionally follows the verified headless NES path. See
+`CLAUDE.md` for evidence and exact next tasks.
 
 Estimates below are ranges for one experienced developer working close to full
 time. Part-time work, learning the hardware while implementing it, broad game

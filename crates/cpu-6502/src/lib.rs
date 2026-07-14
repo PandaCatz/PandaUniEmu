@@ -513,6 +513,15 @@ const NMI_VECTOR: u16 = 0xfffa;
 const RESET_VECTOR: u16 = 0xfffc;
 const IRQ_VECTOR: u16 = 0xfffe;
 
+// Distinguishes operand reads, which only issue the fixed-up bus cycle on a page
+// cross, from writes and read-modify-writes, which always issue it. Indexed
+// addressing uses this to emit the correct dummy read.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Access {
+    Read,
+    Write,
+}
+
 impl Cpu {
     #[must_use]
     pub fn new(state: CpuState) -> Self {
@@ -710,6 +719,20 @@ impl Cpu {
     }
 
     fn execute(&mut self, bus: &mut impl Bus, instruction: Instruction) -> u8 {
+        // A 6502 always performs a second read even for one-byte implied and
+        // accumulator instructions: on their second cycle it reads the byte after
+        // the opcode and discards it, without advancing PC. The two-cycle mode
+        // predicate selects exactly those instructions; the multi-cycle stack and
+        // control-flow instructions have their own bus sequences.
+        if instruction.base_cycles == 2
+            && matches!(
+                instruction.mode,
+                AddressingMode::Implied | AddressingMode::Accumulator
+            )
+        {
+            let _ = bus.read(self.state.pc);
+        }
+
         use Mnemonic::{
             Adc, And, Asl, Bcc, Bcs, Beq, Bit, Bmi, Bne, Bpl, Brk, Bvc, Bvs, Clc, Cld, Cli, Clv,
             Cmp, Cpx, Cpy, Dcp, Dec, Dex, Dey, Eor, Inc, Inx, Iny, Isc, Jmp, Jsr, Lax, Lda, Ldx,
@@ -765,7 +788,7 @@ impl Cpu {
                 u8::from(instruction.page_cross_cycle && page_crossed)
             }
             Sax | Sta | Stx | Sty => {
-                let (address, _) = self.resolve_address(bus, instruction.mode);
+                let (address, _) = self.resolve_address(bus, instruction.mode, Access::Write);
                 let value = match instruction.mnemonic {
                     Sta => self.state.a,
                     Stx => self.state.x,
@@ -780,8 +803,12 @@ impl Cpu {
                 if instruction.mode == AddressingMode::Accumulator {
                     self.state.a = self.modify(instruction.mnemonic, self.state.a);
                 } else {
-                    let (address, _) = self.resolve_address(bus, instruction.mode);
+                    let (address, _) = self.resolve_address(bus, instruction.mode, Access::Write);
                     let value = bus.read(address);
+                    // A 6502 read-modify-write writes the original value back to the
+                    // same address before writing the modified value; the middle
+                    // write is a real bus cycle.
+                    bus.write(address, value);
                     let operation = match instruction.mnemonic {
                         Dcp => Dec,
                         Isc => Inc,
@@ -829,9 +856,10 @@ impl Cpu {
                 self.branch(bus, condition)
             }
             Brk => {
-                // BRK skips the padding byte after the opcode, then pushes the
-                // return address and status with the `B` flag set and enters the
-                // IRQ/BRK vector.
+                // BRK reads and discards the padding byte after the opcode, then
+                // pushes the return address and status with the `B` flag set and
+                // enters the IRQ/BRK vector.
+                let _ = bus.read(self.state.pc);
                 self.state.pc = self.state.pc.wrapping_add(1);
                 self.enter_interrupt_frame(bus, IRQ_VECTOR, true);
                 0
@@ -846,34 +874,59 @@ impl Cpu {
                 0
             }
             Jsr => {
-                let target = self.fetch_u16(bus);
-                self.push_u16(bus, self.state.pc.wrapping_sub(1));
-                self.state.pc = target;
+                // Fetch the target low byte, perform the internal dummy stack read,
+                // push the return address (the address of the target high byte),
+                // then fetch the target high byte.
+                let low = self.fetch(bus);
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                self.push_u16(bus, self.state.pc);
+                let high = self.fetch(bus);
+                self.state.pc = u16::from_le_bytes([low, high]);
                 0
             }
             Rti => {
+                // Dummy read of the byte after the opcode, then a dummy read of the
+                // current stack slot before pulling P, PCL, and PCH.
+                let _ = bus.read(self.state.pc);
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
                 self.state.status = (self.pop(bus) & !FLAG_BREAK) | FLAG_UNUSED;
                 self.state.pc = self.pop_u16(bus);
                 0
             }
             Rts => {
-                self.state.pc = self.pop_u16(bus).wrapping_add(1);
+                // Dummy read of the byte after the opcode and of the current stack
+                // slot, pull the return address, then a dummy read at it before the
+                // increment.
+                let _ = bus.read(self.state.pc);
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                let return_address = self.pop_u16(bus);
+                let _ = bus.read(return_address);
+                self.state.pc = return_address.wrapping_add(1);
                 0
             }
             Pha => {
+                // Second cycle reads and discards the byte after the opcode.
+                let _ = bus.read(self.state.pc);
                 self.push(bus, self.state.a);
                 0
             }
             Php => {
+                let _ = bus.read(self.state.pc);
                 self.push(bus, self.state.status | FLAG_BREAK | FLAG_UNUSED);
                 0
             }
             Pla => {
+                // Dummy read of the byte after the opcode, then a dummy read of the
+                // current stack slot before the pointer pre-increments.
+                let _ = bus.read(self.state.pc);
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
                 self.state.a = self.pop(bus);
                 self.update_zero_negative(self.state.a);
                 0
             }
             Plp => {
+                let _ = bus.read(self.state.pc);
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
                 self.state.status = (self.pop(bus) & !FLAG_BREAK) | FLAG_UNUSED;
                 0
             }
@@ -967,45 +1020,75 @@ impl Cpu {
         u16::from_le_bytes([low, high])
     }
 
-    fn resolve_address(&mut self, bus: &mut impl Bus, mode: AddressingMode) -> (u16, bool) {
+    fn resolve_address(
+        &mut self,
+        bus: &mut impl Bus,
+        mode: AddressingMode,
+        access: Access,
+    ) -> (u16, bool) {
         match mode {
             AddressingMode::ZeroPage => (u16::from(self.fetch(bus)), false),
             AddressingMode::ZeroPageX => {
-                (u16::from(self.fetch(bus).wrapping_add(self.state.x)), false)
+                let base = self.fetch(bus);
+                // Dummy read of the base zero-page address before the index adds in.
+                let _ = bus.read(u16::from(base));
+                (u16::from(base.wrapping_add(self.state.x)), false)
             }
             AddressingMode::ZeroPageY => {
-                (u16::from(self.fetch(bus).wrapping_add(self.state.y)), false)
+                let base = self.fetch(bus);
+                let _ = bus.read(u16::from(base));
+                (u16::from(base.wrapping_add(self.state.y)), false)
             }
             AddressingMode::Absolute => (self.fetch_u16(bus), false),
             AddressingMode::AbsoluteX => {
                 let base = self.fetch_u16(bus);
-                let address = base.wrapping_add(u16::from(self.state.x));
-                (address, page_crossed(base, address))
+                self.indexed_address(bus, base, self.state.x, access)
             }
             AddressingMode::AbsoluteY => {
                 let base = self.fetch_u16(bus);
-                let address = base.wrapping_add(u16::from(self.state.y));
-                (address, page_crossed(base, address))
+                self.indexed_address(bus, base, self.state.y, access)
             }
             AddressingMode::IndexedIndirect => {
-                let pointer = self.fetch(bus).wrapping_add(self.state.x);
+                let base = self.fetch(bus);
+                // Dummy read of the base pointer before the index adds in.
+                let _ = bus.read(u16::from(base));
+                let pointer = base.wrapping_add(self.state.x);
                 (read_u16_zero_page(bus, pointer), false)
             }
             AddressingMode::IndirectIndexed => {
                 let pointer = self.fetch(bus);
                 let base = read_u16_zero_page(bus, pointer);
-                let address = base.wrapping_add(u16::from(self.state.y));
-                (address, page_crossed(base, address))
+                self.indexed_address(bus, base, self.state.y, access)
             }
             _ => unreachable!("mode {mode:?} does not resolve to a data address"),
         }
+    }
+
+    // Adds an index to a 16-bit base and performs the 6502 dummy read at the
+    // un-fixed address (the base high byte kept while the low byte is added
+    // without carry). Reads only issue that cycle on a page cross; writes and
+    // read-modify-writes always issue it.
+    fn indexed_address(
+        &mut self,
+        bus: &mut impl Bus,
+        base: u16,
+        index: u8,
+        access: Access,
+    ) -> (u16, bool) {
+        let address = base.wrapping_add(u16::from(index));
+        let crossed = page_crossed(base, address);
+        if crossed || access == Access::Write {
+            let unfixed = (base & 0xff00) | u16::from((base as u8).wrapping_add(index));
+            let _ = bus.read(unfixed);
+        }
+        (address, crossed)
     }
 
     fn read_operand(&mut self, bus: &mut impl Bus, mode: AddressingMode) -> (u8, bool) {
         if mode == AddressingMode::Immediate {
             return (self.fetch(bus), false);
         }
-        let (address, crossed) = self.resolve_address(bus, mode);
+        let (address, crossed) = self.resolve_address(bus, mode, Access::Read);
         (bus.read(address), crossed)
     }
 
@@ -1062,9 +1145,20 @@ impl Cpu {
         if !condition {
             return 0;
         }
+        // A taken branch reads and discards the next instruction's opcode before
+        // applying the offset.
+        let _ = bus.read(self.state.pc);
         let before = self.state.pc;
-        self.state.pc = self.state.pc.wrapping_add_signed(i16::from(offset));
-        1 + u8::from(page_crossed(before, self.state.pc))
+        let target = before.wrapping_add_signed(i16::from(offset));
+        let crossed = page_crossed(before, target);
+        if crossed {
+            // On a page cross the branch first reads the un-fixed target, with the
+            // low byte added but no carry into the high byte.
+            let unfixed = (before & 0xff00) | u16::from((before as u8).wrapping_add(offset as u8));
+            let _ = bus.read(unfixed);
+        }
+        self.state.pc = target;
+        1 + u8::from(crossed)
     }
 
     fn push(&mut self, bus: &mut impl Bus, value: u8) {
@@ -1139,7 +1233,7 @@ mod singlestep_vectors;
 
 #[cfg(test)]
 mod tests {
-    use super::singlestep_vectors::{Snapshot, UPSTREAM_COMMIT, VECTORS, Vector};
+    use super::singlestep_vectors::{CycleKind, Snapshot, UPSTREAM_COMMIT, VECTORS, Vector};
     use super::*;
 
     struct Ram {
@@ -1229,6 +1323,41 @@ mod tests {
                 self.vector_name
             );
             self.data[usize::from(address)] = value;
+        }
+    }
+
+    // A full 64 KiB bus that records every access in order, used to compare the
+    // CPU's per-cycle bus trace against the SingleStepTests oracle. Unlike
+    // `OracleRam` it never asserts, so a diverging access is recorded rather than
+    // aborting the measurement.
+    struct RecordingRam {
+        data: Vec<u8>,
+        trace: Vec<(u16, u8, CycleKind)>,
+    }
+
+    impl RecordingRam {
+        fn from_vector(vector: &Vector) -> Self {
+            let mut data = vec![0; 65_536];
+            for &(address, value) in vector.initial_ram {
+                data[usize::from(address)] = value;
+            }
+            Self {
+                data,
+                trace: Vec::new(),
+            }
+        }
+    }
+
+    impl Bus for RecordingRam {
+        fn read(&mut self, address: u16) -> u8 {
+            let value = self.data[usize::from(address)];
+            self.trace.push((address, value, CycleKind::Read));
+            value
+        }
+
+        fn write(&mut self, address: u16, value: u8) {
+            self.data[usize::from(address)] = value;
+            self.trace.push((address, value, CycleKind::Write));
         }
     }
 
@@ -1373,6 +1502,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    // Strict per-cycle bus-accuracy gate. Every pinned vector's ordered bus trace
+    // (opcode fetch, operand and pointer reads, indexed and idle-cycle dummy reads,
+    // read-modify-write write-back, and the stack/control-flow/branch/interrupt
+    // sequences) must match the SingleStepTests oracle byte for byte.
+    //
+    // This was reached incrementally: 74 (after the interrupt work) -> 96
+    // (two-cycle implied/accumulator dummy read) -> 108 (RMW write-back) -> 166
+    // (indexed-addressing dummy reads) -> 190 (stack, control-flow, branch, and
+    // BRK per-cycle sequences).
+    #[test]
+    fn per_cycle_bus_trace_matches_the_singlestep_oracle() {
+        let mut diverging = std::collections::BTreeSet::<u8>::new();
+        for vector in VECTORS {
+            let initial = state_from_snapshot(vector.initial, 0);
+            let mut cpu = Cpu::new(initial);
+            let mut ram = RecordingRam::from_vector(vector);
+            let _ = cpu.step(&mut ram);
+            if ram.trace.as_slice() != vector.bus_cycles {
+                diverging.insert(vector.opcode);
+            }
+        }
+        let diverging_hex: Vec<String> = diverging.iter().map(|op| format!("{op:02x}")).collect();
+        assert!(
+            diverging.is_empty(),
+            "per-cycle bus trace diverged from the oracle for {} opcodes: [{}]",
+            diverging.len(),
+            diverging_hex.join(", ")
+        );
     }
 
     #[test]

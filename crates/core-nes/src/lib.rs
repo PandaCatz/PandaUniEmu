@@ -1,8 +1,14 @@
 #![forbid(unsafe_code)]
 
 mod nrom_bus;
+mod ppu_timing;
 
 pub use nrom_bus::{CpuBusFault, NromCpuBus};
+pub use ppu_timing::{
+    DOTS_PER_SCANLINE, MASTER_TICKS_PER_CPU_CYCLE, MASTER_TICKS_PER_PPU_DOT,
+    NTSC_MASTER_CLOCK_DENOMINATOR, NTSC_MASTER_CLOCK_NUMERATOR_HZ, NtscScheduler, PpuEvent,
+    PpuPosition, PpuTiming, SCANLINES_PER_FRAME, TimedPpuEvent, TimingError, VISIBLE_SCANLINES,
+};
 
 use format_ines::{Cartridge, Mirroring, RamSizes, Region};
 use std::error::Error;

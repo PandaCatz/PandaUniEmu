@@ -1,14 +1,22 @@
 # Project State
 
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 
 ## Current phase
 
 The Phase 1 headless foundation is implemented. The Phase 2 NTSC NES vertical
-slice has passed the independent CPU trace, now has architectural interrupt and
-reset handling (IRQ/NMI line sampling, the one-instruction `I`-flag delay,
-edge-triggered NMI, the seven-cycle interrupt/reset sequences), and is at the
-per-cycle bus-order boundary. Seven functional workspace crates exist. The
+slice has passed the independent CPU trace, has architectural interrupt and reset
+handling (IRQ/NMI line sampling, the one-instruction `I`-flag delay, edge-triggered
+NMI, the seven-cycle interrupt/reset sequences; shipped as commit `e6b32c9a`), and
+now matches the sampled documented 6502 bus sequences in the pinned oracle. The
+SingleStepTests per-cycle bus traces are pinned as an oracle and a strict test
+matches all 190 vectors byte for byte. The 76 supported undocumented encodings
+retain instruction-boundary/cycle evidence, not ordered bus-trace evidence. The
+first NTSC timing layer now advances
+an exact rational master clock, three PPU dots per CPU cycle, VBlank edges, and
+the rendering-dependent odd-frame skip. Execution is still instruction-stepped
+(no mid-instruction yielding), and no PPU register or rendering device exists.
+Seven functional workspace crates exist. The
 reviewed QMT `nestest` pair passes 8,991 rows / 8,990
 transitions through the mapper-0 CPU bus, including the exact 76 stable
 undocumented encodings it exercises. A pinned MIT single-step sample provides
@@ -21,7 +29,53 @@ frontend, or playable emulation.
 
 ## Implemented this session
 
-Interrupt and reset increment (instruction-stepped model, fully additive):
+NES guidance intake and first NTSC timing checkpoint (2026-07-14, unpushed):
+
+- Inventoried the operator-supplied 31-file Markdown course at
+  `%USERPROFILE%\Desktop\panda video\nes`. It is an unattributed,
+  unlicensed AI-generated scaffold, so the originals remain outside the repo.
+  `docs/NES_REFERENCE_INTAKE.md` records its safe high-level guidance, hazards,
+  topic index, exact local location, and the rule that independent project
+  oracles remain authoritative.
+- Added `core-nes::NtscScheduler` and `PpuTiming` in the exact NTSC master-clock
+  domain (236.25 MHz / 11): 12 master ticks per CPU cycle and 4 per PPU dot.
+- Added deterministic scanline/dot/frame state, VBlank start at scanline 241 dot
+  1, VBlank clear at pre-render scanline 261 dot 1, and the odd-frame jump from
+  pre-render dot 339 to frame dot 0 only while rendering is enabled.
+- Added six focused tests covering the 3:1 ratio, exact VBlank master timestamp,
+  both VBlank edges, 89,342/89,341-dot frame lengths, disabled-rendering behavior,
+  and failure-atomic counter overflow. PPU registers, rendering, CPU/PPU phase
+  variation, and mid-instruction device interleaving remain deferred.
+- Fresh technical/claims review found and resolved three bounded issues: added
+  missing failure-atomic `FrameOverflow` coverage, scoped exact bus-order claims
+  to the 190 documented-instruction samples while explicitly leaving
+  undocumented bus order open, and replaced the absolute operator path with a
+  non-identifying `%USERPROFILE%` form. The July 14 provenance ledger now records
+  the sanitized strict run. Fix-only re-review found no remaining P0-P2 issue.
+
+Per-cycle bus-accuracy groundwork (2026-07-14, unpushed):
+
+- Extended the SingleStepTests curator to emit each vector's ordered per-cycle
+  bus trace (`bus_cycles`: address, value, `CycleKind::Read`/`Write`) plus a
+  `CycleKind` enum, and regenerated `singlestep_vectors.rs` deterministically
+  offline from the pinned commit (new SHA-256
+  `a53a81800b37bbfb5f5101785974bbed9070c103a09d206988101a79969922fa`, 190 vectors).
+- Added a `RecordingRam` bus and a coverage checkpoint test that compares the
+  CPU's per-cycle bus trace to the oracle. Measured baseline: 74/190 exact
+  matches for the instruction-stepped core.
+- Per-cycle bus accuracy reached all 190 vectors across five increments: (1)
+  two-cycle implied/accumulator dummy read of the byte after the opcode (74->96);
+  (2) read-modify-write original-value write-back (96->108); (3) indexed-addressing
+  dummy reads -- zero-page-indexed and (ind,X) base reads plus the un-fixed-address
+  read for absolute-indexed and (ind),Y, distinguishing reads (page cross only)
+  from writes/RMW (always) (108->166); (4) the stack, control-flow, branch, and
+  BRK per-cycle sequences (166->190). A strict test now requires every recorded
+  bus trace to match the oracle. The 190-vector final-state oracle, the clean-room
+  NROM traces, and the strict `nestest-v1` full trace remain byte-for-byte
+  unregressed after each increment.
+
+Interrupt and reset increment (2026-07-13, shipped as commit `e6b32c9a`,
+instruction-stepped model, fully additive):
 
 - Added edge-triggered NMI and level-triggered IRQ line inputs
   (`set_nmi_line`/`set_irq_line`), a `pending_interrupt` poll with NMI-over-IRQ
@@ -179,17 +233,26 @@ local operator fixtures. Checkpoint
 ## Verification performed
 
 Verified locally on Windows x86-64 with Rust/Cargo 1.96.0 and
-nightly-2026-07-12 on 2026-07-13:
+nightly-2026-07-12 on 2026-07-14:
 
 - `cargo fmt --all -- --check` passed.
 - Clippy passed for the workspace, all targets, and all features with warnings
   denied.
-- Debug tests: 90 passed, 0 failed (14 new interrupt/reset tests).
-- Release tests: 90 passed, 0 failed; doc tests passed.
-- After the interrupt work, the strict `nestest-v1` full trace was re-run and is
-  byte-for-byte unregressed: 8,991 rows / 8,990 transitions, final `PC=C66E`,
-  `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`, 26,554 cycles. Interrupt handling is
-  additive; the instruction path is unchanged.
+- Debug tests: 97 passed, 0 failed.
+- Release tests: 97 passed, 0 failed; doc tests passed.
+- All six focused NTSC timing tests passed, including exact master-clock event
+  timestamps, both VBlank edges, rendering-enabled 89,342/89,341-dot frame
+  alternation, disabled-rendering full frames, and failure-atomic overflow.
+- The strict 190-vector ordered instruction bus trace and final-state oracle
+  passed. Offline curation from the pinned cached upstream source reproduced
+  exact SHA-256
+  `a53a81800b37bbfb5f5101785974bbed9070c103a09d206988101a79969922fa`.
+- The strict `nestest-v1` full trace is byte-for-byte unregressed: 8,991 rows /
+  8,990 transitions, final `PC=C66E`, `A=00`, `X=FF`, `Y=15`, `P=27`, `SP=FD`,
+  26,554 cycles.
+- The clean-room verifier reproduced all three NROM cases at generated SHA-256
+  `02f88830b4af0d46b3ba542a713c4fddd94f6c9af4f9b49e69d92bc03a3bfab5` and
+  passed all six Python generator tests.
 - Both parser fuzz targets completed 10,000 AddressSanitizer executions with no
   crash. Generated seeds contain no third-party ROM or reference-log bytes.
 - The release CLI retained tick 30, video hash `2d1f1e3d37030229`, audio hash
@@ -299,7 +362,9 @@ Ubuntu 24.04.
   terminal APU writes are discarded without modeling APU state.
 - The runner uses the first reference row's raw cycle convention and never
   renormalizes later rows.
-- The current milestone remains instruction-oriented, not bus-cycle accurate.
+- All 190 sampled instructions match their exact ordered bus traces, but the CPU
+  remains instruction-stepped and hardware interrupt/reset entry is not
+  bus-cycle verified. The complete machine is not cycle-accurate.
 - The clean-room NROM cases are independent mapper-0 architectural evidence,
   not evidence for reset timing, interrupts, bus order, PPU/APU behavior, MMC1,
   or gameplay.
@@ -312,13 +377,16 @@ Ubuntu 24.04.
 
 ## Next action
 
-Architectural interrupt sampling and reset are implemented. Next, convert the
-CPU from instruction-stepped to per-cycle bus behavior: exact per-cycle access
-order, dummy reads/writes, RMW double-writes, sub-instruction interrupt-poll
-timing, and NMI hijacking of an in-progress BRK/IRQ sequence, validated against
-the SingleStepTests per-cycle bus traces. Do not start scheduler/PPU work until
-that gate passes. After the mapper-0 whole-machine video/audio gate, implement
-and verify MMC1 for the supplied operator target.
+Turn the timing scaffold into a machine-level, cycle-stepped boundary without
+regressing the strict 190-vector instruction trace. First refactor the CPU so a
+driver can observe and advance one bus cycle at a time while retaining the
+existing whole-instruction `step` wrapper. Then introduce the machine-owned PPU
+register/address-space shell, route mirrored `$2000-$3FFF` CPU accesses, and
+connect timed VBlank/NMI behavior. Verify every increment with the existing
+state/bus oracles plus focused PPU register/timing tests. Rendering fetches,
+scrolling, sprites, DMA/APU, and the headless video/audio gate follow. Only after
+that mapper-0 whole-machine gate should MMC1 be implemented for the supplied
+target.
 
 ## Open decisions
 

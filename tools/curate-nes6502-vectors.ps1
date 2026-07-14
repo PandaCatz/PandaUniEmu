@@ -201,6 +201,16 @@ function Format-Ram {
     return '&[' + ($pairs -join ', ') + ']'
 }
 
+function Format-BusCycles {
+    param([Parameter(Mandatory = $true)] $Cycles)
+
+    $entries = foreach ($cycle in $Cycles) {
+        $kind = if ($cycle[2] -eq 'write') { 'CycleKind::Write' } else { 'CycleKind::Read' }
+        '(0x{0:x4}, 0x{1:x2}, {2})' -f [int]$cycle[0], [int]$cycle[1], $kind
+    }
+    return '&[' + ($entries -join ', ') + ']'
+}
+
 $selectedVectors = [System.Collections.Generic.List[object]]::new()
 foreach ($opcode in $expectedOpcodes) {
     $opcodeName = '{0:x2}' -f $opcode
@@ -248,6 +258,12 @@ $builder = [System.Text.StringBuilder]::new()
 [void]$builder.AppendLine("// Commit: $upstreamCommit")
 [void]$builder.AppendLine('// License: MIT, Copyright (c) 2024 Thomas Harte et al; see NOTICE.')
 [void]$builder.AppendLine()
+[void]$builder.AppendLine('#[derive(Clone, Copy, Debug, Eq, PartialEq)]')
+[void]$builder.AppendLine('pub(crate) enum CycleKind {')
+[void]$builder.AppendLine('    Read,')
+[void]$builder.AppendLine('    Write,')
+[void]$builder.AppendLine('}')
+[void]$builder.AppendLine()
 [void]$builder.AppendLine('#[derive(Clone, Copy, Debug)]')
 [void]$builder.AppendLine('pub(crate) struct Snapshot {')
 [void]$builder.AppendLine('    pub(crate) pc: u16,')
@@ -267,6 +283,7 @@ $builder = [System.Text.StringBuilder]::new()
 [void]$builder.AppendLine("    pub(crate) initial_ram: &'static [(u16, u8)],")
 [void]$builder.AppendLine("    pub(crate) final_ram: &'static [(u16, u8)],")
 [void]$builder.AppendLine('    pub(crate) cycles: u8,')
+[void]$builder.AppendLine("    pub(crate) bus_cycles: &'static [(u16, u8, CycleKind)],")
 [void]$builder.AppendLine('}')
 [void]$builder.AppendLine()
 [void]$builder.AppendLine(('pub(crate) const UPSTREAM_COMMIT: &str = "{0}";' -f $upstreamCommit))
@@ -283,6 +300,7 @@ foreach ($selection in $selectedVectors) {
     [void]$builder.AppendLine(('        initial_ram: ' + (Format-Ram $vector.initial.ram) + ','))
     [void]$builder.AppendLine(('        final_ram: ' + (Format-Ram $vector.final.ram) + ','))
     [void]$builder.AppendLine(('        cycles: {0},' -f [int]$vector.cycles.Count))
+    [void]$builder.AppendLine(('        bus_cycles: ' + (Format-BusCycles $vector.cycles) + ','))
     [void]$builder.AppendLine('    },')
 }
 [void]$builder.AppendLine('];')
