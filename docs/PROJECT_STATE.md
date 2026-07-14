@@ -29,7 +29,8 @@ frontend, or playable emulation.
 
 ## Implemented this session
 
-NES guidance intake and first NTSC timing checkpoint (2026-07-14, unpushed):
+NES guidance intake and first NTSC timing checkpoint (2026-07-14, published in
+`04ae6d017e38296fc82dc1b2ebf1eb06d8eb6b63`):
 
 - Inventoried the operator-supplied 31-file Markdown course at
   `%USERPROFILE%\Desktop\panda video\nes`. It is an unattributed,
@@ -52,8 +53,14 @@ NES guidance intake and first NTSC timing checkpoint (2026-07-14, unpushed):
   undocumented bus order open, and replaced the absolute operator path with a
   non-identifying `%USERPROFILE%` form. The July 14 provenance ledger now records
   the sanitized strict run. Fix-only re-review found no remaining P0-P2 issue.
+- Published the verified 56-file CPU bus-trace/NTSC timing checkpoint as commit
+  `04ae6d017e38296fc82dc1b2ebf1eb06d8eb6b63`. The final deletion-safe preview
+  had no missing managed remote files, validated every allowlisted file through
+  its in-root handle, and preserved the parent tree plus all non-allowlisted
+  remote files.
 
-Per-cycle bus-accuracy groundwork (2026-07-14, unpushed):
+Per-cycle bus-accuracy groundwork (2026-07-14, published in
+`04ae6d017e38296fc82dc1b2ebf1eb06d8eb6b63`):
 
 - Extended the SingleStepTests curator to emit each vector's ordered per-cycle
   bus trace (`bus_cycles`: address, value, `CycleKind::Read`/`Write`) plus a

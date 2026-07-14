@@ -164,7 +164,8 @@ treat its code/claims as an oracle.
   and NMI hijacking explicitly deferred. A four-lens adversarial review found no
   real P0-P2 defect. Shipped as commit `e6b32c9a2e7e65367f11075a72ea5936727e3f27`;
   GitHub Actions CI passed all six Windows/Ubuntu jobs.
-- Completed per-cycle instruction bus accuracy (unpushed as of 2026-07-14).
+- Completed per-cycle instruction bus accuracy (published 2026-07-14 in
+  `04ae6d017e38296fc82dc1b2ebf1eb06d8eb6b63`).
   Extended the
   SingleStepTests curator to emit each vector's ordered per-cycle bus trace
   (`bus_cycles` + a `CycleKind` enum) and regenerated `singlestep_vectors.rs`
@@ -199,6 +200,11 @@ treat its code/claims as an oracle.
   non-identifying `%USERPROFILE%` form. The provenance ledger was also brought
   forward to the sanitized July 14 strict run. Fresh fix-only re-review found no
   remaining P0-P2 issue.
+- Published the verified 56-file CPU bus-trace/NTSC timing checkpoint as commit
+  `04ae6d017e38296fc82dc1b2ebf1eb06d8eb6b63`. The final publisher preview found
+  no missing managed remote files, validated every allowlisted file through its
+  in-root handle, preserved the parent tree and all non-allowlisted remote files,
+  and made no write before the explicit publish call.
 
 ## Required commands
 
